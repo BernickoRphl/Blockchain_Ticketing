@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { getContract } from "../utils/blockchain";
+import axios from "axios";
 
 export default function TransferTicket() {
   const [tokenId, setTokenId] = useState("");
@@ -18,6 +19,12 @@ export default function TransferTicket() {
         tokenId
       );
       await tx.wait();
+
+      await axios.post("http://localhost:5000/api/transfer-ticket", {
+        tokenId,
+        toAddress
+      });
+
       setStatus("Ticket transferred successfully!");
     } catch (err) {
       setStatus("Transfer failed: " + err.message);

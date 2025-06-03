@@ -11,15 +11,11 @@ export default function ValidateTicket() {
     setLoading(true);
     setStatus("");
     try {
-      const contract = await getContract();
-      // Asumsi smart contract punya fungsi ticketStatus(tokenId) yang mengembalikan status tiket
-      const used = await contract.tickets(tokenId).then(t => t.used);
-      const expirationDate = (await contract.tickets(tokenId)).expirationDate.toNumber();
-      const now = Math.floor(Date.now() / 1000);
+      const res = await axios.post("http://localhost:5000/api/validate-ticket", {
+        tokenId,
+      });
 
-      if (used) setStatus("Ticket already used.");
-      else if (now > expirationDate) setStatus("Ticket expired.");
-      else setStatus("Ticket is valid.");
+      setStatus(res.data.message);
     } catch (err) {
       setStatus("Error validating ticket: " + err.message);
     } finally {

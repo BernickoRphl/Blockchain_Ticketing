@@ -14,6 +14,8 @@ mongoose.connect(process.env.MONGODB_URI)
 app.use("/api", require("./routes/mint-ticket"));
 app.use("/api", require("./routes/set-limits"));
 app.use("/api", require("./routes/tickets"));
+app.use("/api", require("./routes/transfer-tickets"));
+app.use("/api", require("./routes/validate-tickets"));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
