@@ -53,6 +53,17 @@ const MintTicket = ({ account }) => {
       
       setTxHash(tx.hash);
       await tx.wait();
+
+      await fetch("/api/mint-ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attendeeAddress,
+          ticketPrice,
+          metadataURI,
+          expirationDays
+        })
+      });
       
       alert('Ticket minted successfully!');
     } catch (error) {

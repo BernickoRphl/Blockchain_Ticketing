@@ -10,6 +10,18 @@ const contractABI = [
   // Add other function signatures as needed
 ];
 
+const logToDatabase = async (type, data) => {
+  try {
+    await fetch("/api/set-limits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, data })
+    });
+  } catch (err) {
+    console.error("Failed to log limit to DB:", err);
+  }
+};
+
 const SetLimits = ({ account }) => {
   const [tokenId, setTokenId] = useState('');
   const [priceLimit, setPriceLimit] = useState('');
@@ -44,6 +56,13 @@ const SetLimits = ({ account }) => {
       const tx = await contract.setResaleLimit(tokenId, limit);
       setTxHash(tx.hash);
       await tx.wait();
+
+      await logToDatabase("resale", {
+        tokenId,
+        priceLimit,
+        txHash: tx.hash,
+        account
+      });
       
       alert('Resale limit set successfully!');
     } catch (error) {
@@ -85,6 +104,14 @@ const SetLimits = ({ account }) => {
       
       setTxHash(tx.hash);
       await tx.wait();
+      await logToDatabase("spending", {
+        dailyLimit,
+        weeklyLimit,
+        monthlyLimit,
+        txHash: tx.hash,
+        account
+      });
+
       
       alert('Spending limits set successfully!');
     } catch (error) {
