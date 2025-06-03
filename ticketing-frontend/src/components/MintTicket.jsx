@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { ethers, parseEther, BrowserProvider } from 'ethers';
 
 // You need to replace these with your actual contract details
-const contractAddress = "YOUR_CONTRACT_ADDRESS_HERE";
-const contractABI = [
+const contractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const contractABI = [ 
   // Add your contract ABI here
   "function mintTicket(address to, string memory uri, uint256 price, uint256 expiration) external payable",
   "function balanceOf(address owner) external view returns (uint256)",

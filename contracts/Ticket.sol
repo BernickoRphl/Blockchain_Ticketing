@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @dev ERC721-based ticketing contract with resale cap, expiration, and validation
  */
 contract EventChainTicket is ERC721, Ownable {
-    uint256 private _tokenIds; 
+    uint256 private _tokenIds;
 
     // Events
     event TicketMinted(
@@ -21,7 +21,12 @@ contract EventChainTicket is ERC721, Ownable {
     event ResaleLimitSet(uint256 indexed tokenId, uint256 priceCap);
     event ExpirationSet(uint256 indexed tokenId, uint256 expirationTimestamp);
     event TicketRevoked(uint256 indexed tokenId);
-    event TicketTransferred(uint256 indexed tokenId, address from, address to, uint256 price);
+    event TicketTransferred(
+        uint256 indexed tokenId,
+        address from,
+        address to,
+        uint256 price
+    );
 
     // Ticket data
     struct TicketInfo {
@@ -43,7 +48,10 @@ contract EventChainTicket is ERC721, Ownable {
     }
 
     modifier onlyBeforeExpiration(uint256 tokenId) {
-        require(block.timestamp <= _tickets[tokenId].expiration, "Ticket expired");
+        require(
+            block.timestamp <= _tickets[tokenId].expiration,
+            "Ticket expired"
+        );
         _;
     }
 
@@ -53,7 +61,10 @@ contract EventChainTicket is ERC721, Ownable {
     }
 
     modifier onlyValidator() {
-        require(validators[msg.sender] || owner() == msg.sender, "Not authorized to validate");
+        require(
+            validators[msg.sender] || owner() == msg.sender,
+            "Not authorized to validate"
+        );
         _;
     }
 
@@ -92,12 +103,9 @@ contract EventChainTicket is ERC721, Ownable {
     /**
      * @dev Validate (use) the ticket at entry
      */
-    function validateTicket(uint256 tokenId)
-        external
-        onlyValidator
-        onlyBeforeExpiration(tokenId)
-        onlyUnused(tokenId)
-    {
+    function validateTicket(
+        uint256 tokenId
+    ) external onlyValidator onlyBeforeExpiration(tokenId) onlyUnused(tokenId) {
         _tickets[tokenId].used = true;
         emit TicketValidated(tokenId, msg.sender);
     }
@@ -105,16 +113,26 @@ contract EventChainTicket is ERC721, Ownable {
     /**
      * @dev Add or remove validator
      */
-    function setValidator(address validator, bool status) external onlyOrganizer {
+    function setValidator(
+        address validator,
+        bool status
+    ) external onlyOrganizer {
         validators[validator] = status;
     }
 
     /**
      * @dev Transfer ticket with price enforcement
      */
-    function transferTicket(address to, uint256 tokenId, uint256 price) external {
+    function transferTicket(
+        address to,
+        uint256 tokenId,
+        uint256 price
+    ) external {
         require(ownerOf(tokenId) == msg.sender, "Not ticket owner");
-        require(price <= _tickets[tokenId].resalePriceCap, "Price cap exceeded");
+        require(
+            price <= _tickets[tokenId].resalePriceCap,
+            "Price cap exceeded"
+        );
 
         _transfer(msg.sender, to, tokenId);
         emit TicketTransferred(tokenId, msg.sender, to, price);
@@ -123,10 +141,10 @@ contract EventChainTicket is ERC721, Ownable {
     /**
      * @dev Set a new resale price cap for a ticket
      */
-    function setResaleLimit(uint256 tokenId, uint256 newCap)
-        external
-        onlyOrganizer
-    {
+    function setResaleLimit(
+        uint256 tokenId,
+        uint256 newCap
+    ) external onlyOrganizer {
         _tickets[tokenId].resalePriceCap = newCap;
         emit ResaleLimitSet(tokenId, newCap);
     }
@@ -134,10 +152,10 @@ contract EventChainTicket is ERC721, Ownable {
     /**
      * @dev Extend or reduce expiration timestamp
      */
-    function setExpiration(uint256 tokenId, uint256 newExpiration)
-        external
-        onlyOrganizer
-    {
+    function setExpiration(
+        uint256 tokenId,
+        uint256 newExpiration
+    ) external onlyOrganizer {
         _tickets[tokenId].expiration = newExpiration;
         emit ExpirationSet(tokenId, newExpiration);
     }
@@ -154,24 +172,29 @@ contract EventChainTicket is ERC721, Ownable {
     /**
      * @dev Retrieve ticket info
      */
-    function getTicketInfo(uint256 tokenId)
-        external
-        view
-        returns (TicketInfo memory)
-    {
+    function getTicketInfo(
+        uint256 tokenId
+    ) external view returns (TicketInfo memory) {
         return _tickets[tokenId];
     }
 
     /**
      * @dev Override tokenURI to return stored metadata URI
      */
-    function tokenURI(uint256 tokenId)
-        public
-        view
-        override
-        returns (string memory)
-    {
+    function tokenURI(
+        uint256 tokenId
+    ) public view override returns (string memory) {
         ownerOf(tokenId); // Ensures token exists
         return _tickets[tokenId].metadataURI;
+    }
+    function totalSupply() external view returns (uint256) {
+        return _tokenIds;
+    }
+
+    /**
+     * @dev Check if a token exists
+     */
+    function exists(uint256 tokenId) external view returns (bool) {
+        return _ownerOf(tokenId) != address(0);
     }
 }
