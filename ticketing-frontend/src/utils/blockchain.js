@@ -1,7 +1,7 @@
 import { ethers, BrowserProvider, JsonRpcProvider, parseEther, formatEther } from 'ethers';
 
 // Contract Configuration
-export const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS_HERE"; // Replace with your deployed contract address
+export const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // Replace with your deployed contract address
 export const POLYGON_TESTNET_RPC = "https://rpc-mumbai.maticvigil.com/"; // Mumbai testnet
 
 // Contract ABI - Add your contract ABI here

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ethers } from "ethers";
 import { getContract } from "../utils/blockchain";
+import axios from "axios";
 
 export default function ValidateTicket() {
   const [tokenId, setTokenId] = useState("");
