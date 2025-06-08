@@ -40,6 +40,9 @@ const CustomerApp = () => {
   const [loading, setLoading] = useState(false);
   const [txHash, setTxHash] = useState('');
   
+  const [showEventPopup, setShowEventPopup] = useState(false);
+const [eventLogs, setEventLogs] = useState([]);
+
   // Transfer states
   const [transferTicketId, setTransferTicketId] = useState('');
   const [transferTo, setTransferTo] = useState('');
@@ -137,6 +140,14 @@ const CustomerApp = () => {
       setContract(contract);
       setIsConnected(true);
       setNetworkName(networkName);
+      const events = ['TicketMinted','TicketValidated','TicketTransferred'];
+events.forEach(name => {
+  contract.on(name, (...args) => {
+    const e = args[args.length - 1];
+    setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
+    setShowEventPopup(true);
+  });
+});
 
       // Load tickets
       await loadTickets(contract, accounts[0]);
@@ -296,6 +307,7 @@ const CustomerApp = () => {
       window.ethereum.on('chainChanged', () => {
         window.location.reload();
       });
+      
     }
 
     return () => {
@@ -303,7 +315,11 @@ const CustomerApp = () => {
         window.ethereum.removeAllListeners('accountsChanged');
         window.ethereum.removeAllListeners('chainChanged');
       }
+  if (!contract) return;
+  const evts = ['TicketMinted','TicketValidated','TicketTransferred'];
+  return () => evts.forEach(name => contract.off(name));
     };
+    
   }, [contract]);
 
   const TicketCard = ({ ticket, isOwned = false }) => (
@@ -364,6 +380,38 @@ const CustomerApp = () => {
       </div>
     </div>
   );
+  const EventPopup = () => showEventPopup && (
+  <div style={{
+    position:'fixed', top:0, left:0, width:'100%', height:'100%',
+    backgroundColor:'rgba(0,0,0,0.5)', display:'flex',
+    justifyContent:'center', alignItems:'center', zIndex:1000
+  }}>
+    <div style={{
+      position:'relative', background:'#fff', padding:'20px',
+      borderRadius:'8px', maxWidth:'500px', width:'90%',
+      maxHeight:'80%', overflowY:'auto'
+    }}>
+      <button onClick={() => setShowEventPopup(false)}
+        style={{
+          position:'absolute', top:'10px', right:'10px',
+          fontSize:'18px', border:'none', background:'none', cursor:'pointer'
+        }}>×</button>
+      <h3>📋 Event Logs</h3>
+      <ul style={{ listStyle:'none', padding:0 }}>
+        {eventLogs.map((e,i) => (
+          <li key={i} style={{ margin:'10px 0', borderBottom:'1px solid #eee', paddingBottom:'5px' }}>
+            <strong>{e.name}</strong>
+            {Object.entries(e.args).filter(([k])=>k!=='_event').map(([k,v]) =>
+              <div key={k}><em>{k}:</em> {v.toString()}</div>
+            )}
+            <small style={{ color:'#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+);
+
 
   return (
     <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'Arial, sans-serif' }}>
@@ -371,19 +419,26 @@ const CustomerApp = () => {
         <h1 style={{ color: '#333', margin: 0 }}>
           🎫 EventChain Marketplace
         </h1>
-        <a 
-          href="/admin" 
-          style={{
+       
+        <div>
+  <button onClick={() => setShowEventPopup(true)}
+    style={{
+      marginRight:'10px', padding:'8px 12px',
+      backgroundColor:'#17a2b8', color:'#fff',
+      border:'none', borderRadius:'4px', cursor:'pointer'
+    }}>
+    Show Events
+  </button>
+  <a href="/admin"style={{
             padding: '10px 20px',
             backgroundColor: '#6c757d',
             color: 'white',
             textDecoration: 'none',
             borderRadius: '4px',
             fontSize: '14px'
-          }}
-        >
-          Admin Panel
-        </a>
+          }}>Admin Panel</a>
+</div>
+
       </div>
 
       {/* Connection Status */}
@@ -680,6 +735,7 @@ const CustomerApp = () => {
           </a>
         </div>
       )}
+      <EventPopup />
     </div>
   );
 };
