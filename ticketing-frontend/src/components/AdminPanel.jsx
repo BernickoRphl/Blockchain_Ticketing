@@ -49,6 +49,9 @@ const AdminPanel = () => {
     const [allTickets, setAllTickets] = useState([]);
     const [validators, setValidators] = useState([]);
 
+    const [showEventPopup, setShowEventPopup] = useState(false);
+    const [eventLogs, setEventLogs] = useState([]);
+
     // Form states for Mint Ticket
     const [attendeeAddress, setAttendeeAddress] = useState('');
     const [metadataURI, setMetadataURI] = useState('');
@@ -169,6 +172,16 @@ const AdminPanel = () => {
             } catch (error) {
                 console.error('Error checking contract details:', error);
             }
+            const events = [
+     'TicketMinted','TicketValidated',
+     'TicketTransferred','ResaleLimitSet',     'ExpirationSet','TicketRevoked'   ];
+   events.forEach(name => {
+     contract.on(name, (...args) => {
+       const e = args[args.length - 1];
+       setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
+       setShowEventPopup(true);
+     });
+   });
 
         } catch (error) {
             console.error('Error connecting wallet:', error);
@@ -436,7 +449,7 @@ const AdminPanel = () => {
     };
 
     // Handle account changes
-    useEffect(() => {
+    useEffect(() => {   
         if (window.ethereum) {
             window.ethereum.on('accountsChanged', (accounts) => {
                 if (accounts.length === 0) {
@@ -463,6 +476,7 @@ const AdminPanel = () => {
                 window.ethereum.removeAllListeners('accountsChanged');
                 window.ethereum.removeAllListeners('chainChanged');
             }
+            if (!contract) return;      ['TicketMinted','TicketValidated','TicketTransferred','ResaleLimitSet','ExpirationSet','TicketRevoked']        .forEach(name => contract.off(name));
         };
     }, [contract]);
 
@@ -523,6 +537,38 @@ const AdminPanel = () => {
             </div>
         </div>
     );
+    const EventPopup = () => showEventPopup && (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+      backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+      justifyContent: 'center', alignItems: 'center', zIndex: 1000
+    }}>
+      <div style={{
+        position: 'relative',
+        background: '#fff', padding: '20px', borderRadius: '8px',
+        maxWidth: '500px', width: '90%', maxHeight: '80%', overflowY: 'auto'
+      }}>
+        <button onClick={() => setShowEventPopup(false)}
+          style={{
+            position: 'absolute', top: '10px', right: '10px',
+            fontSize: '18px', border: 'none', background: 'none', cursor: 'pointer'
+          }}>×</button>
+        <h3>📋 Event Logs</h3>
+        <ul style={{ listStyle: 'none', padding: 0 }}>
+          {eventLogs.map((e,i) => (
+            <li key={i} style={{ margin: '10px 0', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
+              <strong>{e.name}</strong>
+              {Object.entries(e.args).filter(([k]) => k!=='_event').map(([k,v]) =>
+                <div key={k}><em>{k}:</em> {v.toString()}</div>
+              )}
+              <small style={{ color:'#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+
 
     return (
         <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto', fontFamily: 'Arial, sans-serif' }}>
@@ -530,19 +576,29 @@ const AdminPanel = () => {
                 <h1 style={{ color: '#333', margin: 0 }}>
                     🎫 EventChain Admin Panel
                 </h1>
-                <a
-                    href="/"
-                    style={{
+                
+                <div>
+        <button onClick={() => setShowEventPopup(true)}
+           style={{
+             marginRight: '10px',
+             padding: '8px 12px',
+            backgroundColor: '#17a2b8',
+             color: 'white',
+             border: 'none',
+             borderRadius: '4px',
+             cursor: 'pointer'
+           }}>
+           Show Events
+         </button>
+         <a href="/" style={{
                         padding: '10px 20px',
                         backgroundColor: '#28a745',
                         color: 'white',
                         textDecoration: 'none',
                         borderRadius: '4px',
                         fontSize: '14px'
-                    }}
-                >
-                    Customer View
-                </a>
+                    }}>Customer View</a>
+       </div>
             </div>
 
             {/* Connection Status */}
@@ -1019,6 +1075,8 @@ const AdminPanel = () => {
                     )}
                 </div>
             )}
+         <EventPopup />
+
         </div>
     )
 }
