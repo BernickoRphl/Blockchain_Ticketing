@@ -53,6 +53,26 @@ const MintTicket = ({ account }) => {
       
       setTxHash(tx.hash);
       await tx.wait();
+
+      const tokenCounter = await contract.tokenCounter();
+      const tokenId = Number(tokenCounter) - 1;
+
+      const response = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenId,
+          attendee: attendeeAddress,
+          metadataURI,
+          priceCap: ticketPrice,
+          expiration: new Date(expirationTimestamp * 1000).toISOString(),
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save ticket to database');
+      }
       
       alert('Ticket minted successfully!');
     } catch (error) {
