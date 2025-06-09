@@ -25,9 +25,9 @@ async function main() {
 
   // Get the actual ABI from the compiled contract
   const contractInfo = {
-    address: contractAddress,
-    abi: EventChainTicket.interface.fragments.map(fragment => fragment.format('json')).map(item => JSON.parse(item))
-  };
+  address: contractAddress,
+  abi: JSON.parse(EventChainTicket.interface.formatJson()) // Format yang benar
+};
 
   fs.writeFileSync(
     path.join(contractsDir, "EventChainTicket.json"),

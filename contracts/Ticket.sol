@@ -27,6 +27,12 @@ contract EventChainTicket is ERC721, Ownable {
         address to,
         uint256 price
     );
+    event TicketPurchased(
+        uint256 indexed tokenId,
+        address indexed buyer,
+        address indexed seller,
+        uint256 price
+    );
 
     // Ticket data
     struct TicketInfo {
@@ -37,6 +43,9 @@ contract EventChainTicket is ERC721, Ownable {
     }
 
     mapping(uint256 => TicketInfo) private _tickets;
+    
+    // Ticket listings for sale
+    mapping(uint256 => uint256) public ticketPrices; // tokenId => price (0 means not for sale)
 
     // Authorized validators
     mapping(address => bool) public validators;
@@ -101,6 +110,63 @@ contract EventChainTicket is ERC721, Ownable {
     }
 
     /**
+     * @dev List ticket for sale
+     */
+    function listTicketForSale(uint256 tokenId, uint256 price) external {
+        require(ownerOf(tokenId) == msg.sender, "Not ticket owner");
+        require(price > 0, "Price must be greater than 0");
+        require(
+            price <= _tickets[tokenId].resalePriceCap,
+            "Price exceeds resale cap"
+        );
+        require(
+            block.timestamp <= _tickets[tokenId].expiration,
+            "Ticket expired"
+        );
+        require(!_tickets[tokenId].used, "Ticket already used");
+
+        ticketPrices[tokenId] = price;
+    }
+
+    /**
+     * @dev Remove ticket from sale
+     */
+    function removeFromSale(uint256 tokenId) external {
+        require(ownerOf(tokenId) == msg.sender, "Not ticket owner");
+        ticketPrices[tokenId] = 0;
+    }
+
+    /**
+     * @dev Purchase ticket from another user
+     */
+    function purchaseTicket(uint256 tokenId) external payable {
+        require(ticketPrices[tokenId] > 0, "Ticket not for sale");
+        require(msg.value == ticketPrices[tokenId], "Incorrect payment amount");
+        require(
+            block.timestamp <= _tickets[tokenId].expiration,
+            "Ticket expired"
+        );
+        require(!_tickets[tokenId].used, "Ticket already used");
+
+        address seller = ownerOf(tokenId);
+        require(seller != msg.sender, "Cannot buy your own ticket");
+
+        uint256 price = ticketPrices[tokenId];
+        
+        // Remove from sale
+        ticketPrices[tokenId] = 0;
+
+        // Transfer ticket
+        _transfer(seller, msg.sender, tokenId);
+        
+        // Transfer payment to seller
+        payable(seller).transfer(price);
+
+        emit TicketPurchased(tokenId, msg.sender, seller, price);
+        emit TicketTransferred(tokenId, seller, msg.sender, price);
+    }
+
+    /**
      * @dev Validate (use) the ticket at entry
      */
     function validateTicket(
@@ -121,21 +187,22 @@ contract EventChainTicket is ERC721, Ownable {
     }
 
     /**
-     * @dev Transfer ticket with price enforcement
+     * @dev Transfer ticket without payment (gift)
      */
     function transferTicket(
         address to,
-        uint256 tokenId,
-        uint256 price
+        uint256 tokenId
     ) external {
         require(ownerOf(tokenId) == msg.sender, "Not ticket owner");
-        require(
-            price <= _tickets[tokenId].resalePriceCap,
-            "Price cap exceeded"
-        );
+        require(to != address(0), "Invalid recipient");
+
+        // Remove from sale if listed
+        if (ticketPrices[tokenId] > 0) {
+            ticketPrices[tokenId] = 0;
+        }
 
         _transfer(msg.sender, to, tokenId);
-        emit TicketTransferred(tokenId, msg.sender, to, price);
+        emit TicketTransferred(tokenId, msg.sender, to, 0);
     }
 
     /**
@@ -164,6 +231,11 @@ contract EventChainTicket is ERC721, Ownable {
      * @dev Revoke a ticket (burn it)
      */
     function revokeTicket(uint256 tokenId) external onlyOrganizer {
+        // Remove from sale if listed
+        if (ticketPrices[tokenId] > 0) {
+            ticketPrices[tokenId] = 0;
+        }
+        
         _burn(tokenId);
         delete _tickets[tokenId];
         emit TicketRevoked(tokenId);
@@ -179,6 +251,20 @@ contract EventChainTicket is ERC721, Ownable {
     }
 
     /**
+     * @dev Get ticket sale price (0 if not for sale)
+     */
+    function getTicketPrice(uint256 tokenId) external view returns (uint256) {
+        return ticketPrices[tokenId];
+    }
+
+    /**
+     * @dev Check if ticket is for sale
+     */
+    function isTicketForSale(uint256 tokenId) external view returns (bool) {
+        return ticketPrices[tokenId] > 0;
+    }
+
+    /**
      * @dev Override tokenURI to return stored metadata URI
      */
     function tokenURI(
@@ -187,6 +273,7 @@ contract EventChainTicket is ERC721, Ownable {
         ownerOf(tokenId); // Ensures token exists
         return _tickets[tokenId].metadataURI;
     }
+
     function totalSupply() external view returns (uint256) {
         return _tokenIds;
     }

@@ -239,6 +239,33 @@
     {
       "type": "event",
       "anonymous": false,
+      "name": "TicketPurchased",
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": "tokenId",
+          "indexed": true
+        },
+        {
+          "type": "address",
+          "name": "buyer",
+          "indexed": true
+        },
+        {
+          "type": "address",
+          "name": "seller",
+          "indexed": true
+        },
+        {
+          "type": "uint256",
+          "name": "price",
+          "indexed": false
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "anonymous": false,
       "name": "TicketRevoked",
       "inputs": [
         {
@@ -427,6 +454,25 @@
     },
     {
       "type": "function",
+      "name": "getTicketPrice",
+      "constant": true,
+      "stateMutability": "view",
+      "payable": false,
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": "tokenId"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "uint256",
+          "name": ""
+        }
+      ]
+    },
+    {
+      "type": "function",
       "name": "isApprovedForAll",
       "constant": true,
       "stateMutability": "view",
@@ -447,6 +493,42 @@
           "name": ""
         }
       ]
+    },
+    {
+      "type": "function",
+      "name": "isTicketForSale",
+      "constant": true,
+      "stateMutability": "view",
+      "payable": false,
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": "tokenId"
+        }
+      ],
+      "outputs": [
+        {
+          "type": "bool",
+          "name": ""
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "listTicketForSale",
+      "constant": false,
+      "payable": false,
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": "tokenId"
+        },
+        {
+          "type": "uint256",
+          "name": "price"
+        }
+      ],
+      "outputs": []
     },
     {
       "type": "function",
@@ -524,6 +606,33 @@
           "name": ""
         }
       ]
+    },
+    {
+      "type": "function",
+      "name": "purchaseTicket",
+      "constant": false,
+      "stateMutability": "payable",
+      "payable": true,
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": "tokenId"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "type": "function",
+      "name": "removeFromSale",
+      "constant": false,
+      "payable": false,
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": "tokenId"
+        }
+      ],
+      "outputs": []
     },
     {
       "type": "function",
@@ -695,6 +804,25 @@
     },
     {
       "type": "function",
+      "name": "ticketPrices",
+      "constant": true,
+      "stateMutability": "view",
+      "payable": false,
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": ""
+        }
+      ],
+      "outputs": [
+        {
+          "type": "uint256",
+          "name": ""
+        }
+      ]
+    },
+    {
+      "type": "function",
       "name": "tokenURI",
       "constant": true,
       "stateMutability": "view",
@@ -773,10 +901,6 @@
         {
           "type": "uint256",
           "name": "tokenId"
-        },
-        {
-          "type": "uint256",
-          "name": "price"
         }
       ],
       "outputs": []

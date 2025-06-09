@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import contractData from '../contracts/EventChainTicket.json';
 
 // Replace with your deployed contract address after running deploy script
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
@@ -7,9 +8,11 @@ const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 // 0x5FbDB2315678afecb367f032d93F642f64180aa3
 // Complete ABI for EventChainTicket contract
 const CONTRACT_ABI = [
+    // ✅ ADD THIS MISSING FUNCTION
+    "function owner() view returns (address)", 
+    // Your existing functions
     "function mintTicket(address attendee, string calldata metadataURI, uint256 priceCap, uint256 expirationTimestamp) external returns (uint256)",
     "function validateTicket(uint256 tokenId) external",
-    "function transferTicket(address to, uint256 tokenId, uint256 price) external",
     "function setValidator(address validator, bool status) external",
     "function setResaleLimit(uint256 tokenId, uint256 newCap) external",
     "function setExpiration(uint256 tokenId, uint256 newExpiration) external",
@@ -19,17 +22,21 @@ const CONTRACT_ABI = [
     "function ownerOf(uint256 tokenId) external view returns (address)",
     "function balanceOf(address owner) external view returns (uint256)",
     "function validators(address) external view returns (bool)",
-    "function owner() external view returns (address)",
-    // Remove these two lines - they don't exist in your contract:
-    // "function totalSupply() external view returns (uint256)",
-    // "function exists(uint256 tokenId) external view returns (bool)",
-    "event TicketMinted(uint256 indexed tokenId, address indexed attendee, string metadataURI)",
-    "event TicketValidated(uint256 indexed tokenId, address indexed validator)",
-    "event TicketTransferred(uint256 indexed tokenId, address from, address to, uint256 price)",
-    "event ResaleLimitSet(uint256 indexed tokenId, uint256 priceCap)",
-    "event ExpirationSet(uint256 indexed tokenId, uint256 expirationTimestamp)",
-    "event TicketRevoked(uint256 indexed tokenId)"
+    "function totalSupply() external view returns (uint256)",
+    "function exists(uint256 tokenId) external view returns (bool)",
+    "function listTicketForSale(uint256 tokenId, uint256 price) external",
+    "function removeFromSale(uint256 tokenId) external",
+    "function purchaseTicket(uint256 tokenId) external payable",
+    "function transferTicket(address to, uint256 tokenId) external",
+    "function getTicketPrice(uint256 tokenId) external view returns (uint256)",
+    "function isTicketForSale(uint256 tokenId) external view returns (bool)",
+    "function ticketPrices(uint256) external view returns (uint256)"
 ];
+
+console.log("=== CONTRACT SETUP ===");
+console.log("Contract Address:", CONTRACT_ADDRESS);
+console.log("Contract ABI check - owner function exists?", CONTRACT_ABI.some(item => item.includes('owner()')));
+
 
 const AdminPanel = () => {
     const [account, setAccount] = useState('');
@@ -109,6 +116,70 @@ const AdminPanel = () => {
         }
     };
 
+    // FIXED: Only one handleAccountsChanged function
+    const handleAccountsChanged = async (accounts) => {
+        try {
+            console.log("Account changed to:", accounts);
+
+            // Cleanup existing contract listeners first
+            if (contract) {
+                contract.removeAllListeners();
+            }
+
+            if (accounts.length === 0) {
+                setIsConnected(false);
+                setAccount('');
+                setIsOwner(false);
+                setContract(null);
+                setProvider(null);
+                return;
+            }
+
+            // Update account
+            setAccount(accounts[0]);
+
+            // PERBAIKI BAGIAN INI - lebih robust:
+            try {
+                // Recreate provider and contract with new signer
+                const newProvider = new ethers.BrowserProvider(window.ethereum);
+                const newSigner = await newProvider.getSigner();
+                const newContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, newSigner);
+
+                setProvider(newProvider);
+                setContract(newContract);
+
+                // Wait a bit for the connection to stabilize
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Check owner with new contract instance
+                console.log("Checking owner after account change...");
+                const contractOwner = await newContract.owner();
+                console.log("New account:", accounts[0]); // accounts sudah tersedia dari parameter
+                console.log("Contract owner:", contractOwner);
+
+                const isOwnerCheck = contractOwner.toLowerCase() === accounts[0].toLowerCase();
+                console.log("Is new account owner?", isOwnerCheck);
+
+                setIsOwner(isOwnerCheck);
+
+                if (isOwnerCheck) {
+                    // Reload data after another delay
+                    setTimeout(() => {
+                        loadContractData(newContract).catch(err => {
+                            console.warn("Failed to reload contract data:", err);
+                        });
+                    }, 1500);
+                }
+            } catch (error) {
+                console.error('Error in account change process:', error);
+                setIsOwner(false);
+            }
+        } catch (error) {
+            console.error('Error handling account change:', error);
+            setIsOwner(false);
+        }
+    };
+
     // Get network name
     const getNetworkName = async (chainId) => {
         switch (chainId) {
@@ -123,6 +194,8 @@ const AdminPanel = () => {
     // Connect to MetaMask
     const connectWallet = async () => {
         try {
+            console.log("=== STARTING WALLET CONNECTION ===");
+
             if (!window.ethereum) {
                 alert('Please install MetaMask!');
                 return;
@@ -144,67 +217,149 @@ const AdminPanel = () => {
                 method: 'eth_requestAccounts'
             });
 
+            console.log("Accounts received:", accounts);
+
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
+
+            console.log("Signer address:", await signer.getAddress());
+
             const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-            const network = await provider.getNetwork();
-            const networkName = await getNetworkName('0x' + network.chainId.toString(16));
+            // DEBUGGING KRITIS - Test contract call
+            console.log("Testing contract connection...");
+            try {
+                const contractOwner = await contract.owner();
+                console.log("✅ Contract owner from blockchain:", contractOwner);
+                console.log("✅ Current account:", accounts[0]);
+                console.log("✅ Addresses match?", contractOwner.toLowerCase() === accounts[0].toLowerCase());
+            } catch (contractError) {
+                console.error("❌ FAILED to call contract.owner():", contractError);
+                console.error("Contract address:", CONTRACT_ADDRESS);
+                console.error("Contract ABI check - owner function exists?", CONTRACT_ABI.includes('function owner()'));
+                return; // Stop here if contract call fails
+            }
 
+            // Set states
             setAccount(accounts[0]);
             setProvider(provider);
             setContract(contract);
             setIsConnected(true);
+
+            const network = await provider.getNetwork();
+            const networkName = await getNetworkName('0x' + network.chainId.toString(16));
             setNetworkName(networkName);
 
-            // Check if connected account is the contract owner
+            console.log("Connected to network:", networkName);
+            console.log("Contract address:", CONTRACT_ADDRESS);
+            console.log("Account address:", accounts[0]);
+
+            // FINAL OWNER CHECK
             try {
                 const owner = await contract.owner();
                 const isOwner = owner.toLowerCase() === accounts[0].toLowerCase();
+
+                console.log("=== FINAL OWNER CHECK ===");
+                console.log("Contract owner:", owner);
+                console.log("Current account:", accounts[0]);
+                console.log("Is owner?", isOwner);
+
                 setIsOwner(isOwner);
 
                 if (isOwner) {
+                    console.log("✅ User is owner, loading data...");
                     await loadContractData(contract);
                 } else {
-                    alert('You are not the contract owner. Admin functions will be disabled.');
+                    console.log("❌ User is NOT owner");
                 }
 
             } catch (error) {
-                console.error('Error checking contract details:', error);
+                console.error('❌ ERROR in final owner check:', error);
+                setIsOwner(false);
             }
-            const events = [
-     'TicketMinted','TicketValidated',
-     'TicketTransferred','ResaleLimitSet',     'ExpirationSet','TicketRevoked'   ];
-   events.forEach(name => {
-     contract.on(name, (...args) => {
-       const e = args[args.length - 1];
-       setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
-       setShowEventPopup(true);
-     });
-   });
+
+            // Event listeners setup...
 
         } catch (error) {
-            console.error('Error connecting wallet:', error);
+            console.error('❌ ERROR in connectWallet:', error);
             alert('Error connecting wallet: ' + error.message);
         }
     };
 
+    const testContractManually = async () => {
+        try {
+            if (!window.ethereum) {
+                console.log("No MetaMask");
+                return;
+            }
+
+            console.log("=== MANUAL CONTRACT TEST ===");
+
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+            console.log("Provider:", provider);
+            console.log("Signer:", await signer.getAddress());
+            console.log("Contract:", contract);
+
+            // Test owner call
+            const owner = await contract.owner();
+            console.log("Owner from contract:", owner);
+
+            // Test current account
+            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            console.log("Current accounts:", accounts);
+
+            if (accounts.length > 0) {
+                console.log("Match?", owner.toLowerCase() === accounts[0].toLowerCase());
+            }
+
+        } catch (error) {
+            console.error("Manual test failed:", error);
+        }
+    };
+
+    // LANGKAH 4: Tambahkan button untuk manual test (sementara)
+    // Di dalam return JSX, tambahkan button ini sebelum connect button:
+    {
+        !isConnected && (
+            <button
+                onClick={testContractManually}
+                style={{ marginRight: '10px', padding: '10px', background: 'orange' }}
+            >
+                🔍 Test Contract Manually
+            </button>
+        )
+    }
+
+    const checkNetwork = async () => {
+        if (window.ethereum) {
+            const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+            console.log("Current chain ID:", chainId);
+            console.log("Should be 0x7A69 (31337) for Hardhat");
+        }
+    };
+
     // Load all contract data
-    const loadContractData = async () => {
-        if (!contract) return;
+    const loadContractData = async (contractInstance = contract) => {
+        if (!contractInstance) {
+            console.log("No contract instance available");
+            return;
+        }
 
         try {
-            // Add error handling for each contract call
             console.log("Loading contract data...");
 
-            // Example of safe data loading with error handling
-            const totalSupply = await contract.balanceOf(await contract.signer.getAddress()).catch(err => {
-                console.warn("Could not get balance:", err);
-                return 0;
-            });
-
-            // If you're trying to get ticket info, make sure the token exists first
-            // Don't call getTicketInfo on non-existent tokens
+            // PERBAIKI - gunakan fungsi yang benar dari contract:
+            try {
+                const totalSupply = await contractInstance.totalSupply();
+                console.log("Total supply:", totalSupply.toString());
+                setTotalTickets(Number(totalSupply));
+            } catch (error) {
+                console.warn("Could not get total supply:", error);
+                setTotalTickets(0);
+            }
 
             console.log("Contract data loaded successfully");
 
@@ -285,12 +440,7 @@ const AdminPanel = () => {
         }
 
         try {
-            const exists = await contract.exists(selectedTicketId);
-            if (!exists) {
-                alert('Ticket does not exist');
-                return;
-            }
-
+            // Note: Removed exists() check since it's not in your contract ABI
             const info = await contract.getTicketInfo(selectedTicketId);
             const owner = await contract.ownerOf(selectedTicketId);
 
@@ -448,25 +598,40 @@ const AdminPanel = () => {
         }
     };
 
-    // Handle account changes
-    useEffect(() => {   
-        if (window.ethereum) {
-            window.ethereum.on('accountsChanged', (accounts) => {
-                if (accounts.length === 0) {
-                    setIsConnected(false);
-                    setAccount('');
-                    setIsOwner(false);
-                } else {
-                    setAccount(accounts[0]);
-                    if (contract) {
-                        contract.owner().then(owner => {
-                            setIsOwner(owner.toLowerCase() === accounts[0].toLowerCase());
-                        });
-                    }
-                }
-            });
+    // Reset connection function
+    const resetConnection = async () => {
+        try {
+            // Clear all states
+            setIsConnected(false);
+            setAccount('');
+            setIsOwner(false);
+            setContract(null);
+            setProvider(null);
 
+            // Clear event logs
+            setEventLogs([]);
+
+            // Wait a bit then reconnect
+            setTimeout(() => {
+                connectWallet();
+            }, 1000);
+
+        } catch (error) {
+            console.error('Error resetting connection:', error);
+        }
+    };
+
+    // Handle account changes
+    useEffect(() => {
+        if (window.ethereum) {
+            // Remove existing listeners first
+            window.ethereum.removeAllListeners('accountsChanged');
+            window.ethereum.removeAllListeners('chainChanged');
+
+            // Add new listeners
+            window.ethereum.on('accountsChanged', handleAccountsChanged);
             window.ethereum.on('chainChanged', () => {
+                console.log("Chain changed, reloading...");
                 window.location.reload();
             });
         }
@@ -476,9 +641,28 @@ const AdminPanel = () => {
                 window.ethereum.removeAllListeners('accountsChanged');
                 window.ethereum.removeAllListeners('chainChanged');
             }
-            if (!contract) return;      ['TicketMinted','TicketValidated','TicketTransferred','ResaleLimitSet','ExpirationSet','TicketRevoked']        .forEach(name => contract.off(name));
+            if (contract) {
+                contract.removeAllListeners();
+            }
         };
     }, [contract]);
+
+    const debugContract = async () => {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const code = await provider.getCode(CONTRACT_ADDRESS);
+        if (code === "0x") {
+            alert('Contract tidak ditemukan di address ini. Pastikan sudah deploy.');
+            return;
+        }
+
+        try {
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+            const owner = await contract.owner();
+            console.log("Owner:", owner);
+        } catch (error) {
+            console.error("Contract call failed:", error);
+        }
+    };
 
     const TabButton = ({ id, label, active, onClick }) => (
         <button
@@ -538,36 +722,36 @@ const AdminPanel = () => {
         </div>
     );
     const EventPopup = () => showEventPopup && (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-      backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-      justifyContent: 'center', alignItems: 'center', zIndex: 1000
-    }}>
-      <div style={{
-        position: 'relative',
-        background: '#fff', padding: '20px', borderRadius: '8px',
-        maxWidth: '500px', width: '90%', maxHeight: '80%', overflowY: 'auto'
-      }}>
-        <button onClick={() => setShowEventPopup(false)}
-          style={{
-            position: 'absolute', top: '10px', right: '10px',
-            fontSize: '18px', border: 'none', background: 'none', cursor: 'pointer'
-          }}>×</button>
-        <h3>📋 Event Logs</h3>
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {eventLogs.map((e,i) => (
-            <li key={i} style={{ margin: '10px 0', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
-              <strong>{e.name}</strong>
-              {Object.entries(e.args).filter(([k]) => k!=='_event').map(([k,v]) =>
-                <div key={k}><em>{k}:</em> {v.toString()}</div>
-              )}
-              <small style={{ color:'#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+        <div style={{
+            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+            justifyContent: 'center', alignItems: 'center', zIndex: 1000
+        }}>
+            <div style={{
+                position: 'relative',
+                background: '#fff', padding: '20px', borderRadius: '8px',
+                maxWidth: '500px', width: '90%', maxHeight: '80%', overflowY: 'auto'
+            }}>
+                <button onClick={() => setShowEventPopup(false)}
+                    style={{
+                        position: 'absolute', top: '10px', right: '10px',
+                        fontSize: '18px', border: 'none', background: 'none', cursor: 'pointer'
+                    }}>×</button>
+                <h3>📋 Event Logs</h3>
+                <ul style={{ listStyle: 'none', padding: 0 }}>
+                    {eventLogs.map((e, i) => (
+                        <li key={i} style={{ margin: '10px 0', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
+                            <strong>{e.name}</strong>
+                            {Object.entries(e.args).filter(([k]) => k !== '_event').map(([k, v]) =>
+                                <div key={k}><em>{k}:</em> {v.toString()}</div>
+                            )}
+                            <small style={{ color: '#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
 
 
     return (
@@ -576,21 +760,21 @@ const AdminPanel = () => {
                 <h1 style={{ color: '#333', margin: 0 }}>
                     🎫 EventChain Admin Panel
                 </h1>
-                
+
                 <div>
-        <button onClick={() => setShowEventPopup(true)}
-           style={{
-             marginRight: '10px',
-             padding: '8px 12px',
-            backgroundColor: '#17a2b8',
-             color: 'white',
-             border: 'none',
-             borderRadius: '4px',
-             cursor: 'pointer'
-           }}>
-           Show Events
-         </button>
-         <a href="/" style={{
+                    <button onClick={() => setShowEventPopup(true)}
+                        style={{
+                            marginRight: '10px',
+                            padding: '8px 12px',
+                            backgroundColor: '#17a2b8',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                        }}>
+                        Show Events
+                    </button>
+                    <a href="/" style={{
                         padding: '10px 20px',
                         backgroundColor: '#28a745',
                         color: 'white',
@@ -598,7 +782,7 @@ const AdminPanel = () => {
                         borderRadius: '4px',
                         fontSize: '14px'
                     }}>Customer View</a>
-       </div>
+                </div>
             </div>
 
             {/* Connection Status */}
@@ -1075,7 +1259,7 @@ const AdminPanel = () => {
                     )}
                 </div>
             )}
-         <EventPopup />
+            <EventPopup />
 
         </div>
     )
