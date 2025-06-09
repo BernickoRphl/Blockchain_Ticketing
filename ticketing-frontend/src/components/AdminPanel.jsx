@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import axios from 'axios';
+
 
 // Replace with your deployed contract address after running deploy script
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
@@ -247,6 +249,17 @@ const AdminPanel = () => {
 
             const receipt = await tx.wait();
             console.log("Transaction confirmed:", receipt);
+            const event = receipt.logs.find(log => log.eventName === 'TicketMinted');
+const tokenId = event ? event.args.tokenId.toString() : null;
+
+await axios.post('http://localhost:5000/api/tickets', {
+  tokenId,
+  metadataURI,
+  attendee: attendeeAddress,
+  priceCap,
+  expiration: new Date(expirationTimestamp * 1000)
+});
+            
 
             alert('Ticket minted successfully!');
 

@@ -1,0 +1,22 @@
+const express = require('express');
+const router = express.Router();
+const Ticket = require('../models/Ticket');
+
+// POST /api/tickets
+router.post('/', async (req, res) => {
+  try {
+    const ticket = new Ticket(req.body);
+    await ticket.save();
+    res.status(201).json(ticket);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET all tickets (optional)
+router.get('/', async (req, res) => {
+  const tickets = await Ticket.find().sort({ createdAt: -1 });
+  res.json(tickets);
+});
+
+module.exports = router;
