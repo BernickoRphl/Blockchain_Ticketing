@@ -175,15 +175,15 @@ const AdminPanel = () => {
                 console.error('Error checking contract details:', error);
             }
             const events = [
-     'TicketMinted','TicketValidated',
-     'TicketTransferred','ResaleLimitSet',     'ExpirationSet','TicketRevoked'   ];
-   events.forEach(name => {
-     contract.on(name, (...args) => {
-       const e = args[args.length - 1];
-       setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
-       setShowEventPopup(true);
-     });
-   });
+                'TicketMinted', 'TicketValidated',
+                'TicketTransferred', 'ResaleLimitSet', 'ExpirationSet', 'TicketRevoked'];
+            events.forEach(name => {
+                contract.on(name, (...args) => {
+                    const e = args[args.length - 1];
+                    setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
+                    setShowEventPopup(true);
+                });
+            });
 
         } catch (error) {
             console.error('Error connecting wallet:', error);
@@ -250,16 +250,16 @@ const AdminPanel = () => {
             const receipt = await tx.wait();
             console.log("Transaction confirmed:", receipt);
             const event = receipt.logs.find(log => log.eventName === 'TicketMinted');
-const tokenId = event ? event.args.tokenId.toString() : null;
+            const tokenId = event ? event.args.tokenId.toString() : null;
 
-await axios.post('http://localhost:5000/api/tickets', {
-  tokenId,
-  metadataURI,
-  attendee: attendeeAddress,
-  priceCap,
-  expiration: new Date(expirationTimestamp * 1000)
-});
-            
+            await axios.post('http://localhost:5000/api/tickets', {
+                tokenId,
+                metadataURI,
+                attendee: attendeeAddress,
+                priceCap,
+                expiration: new Date(expirationTimestamp * 1000)
+            });
+
 
             alert('Ticket minted successfully!');
 
@@ -462,7 +462,7 @@ await axios.post('http://localhost:5000/api/tickets', {
     };
 
     // Handle account changes
-    useEffect(() => {   
+    useEffect(() => {
         if (window.ethereum) {
             window.ethereum.on('accountsChanged', (accounts) => {
                 if (accounts.length === 0) {
@@ -489,7 +489,7 @@ await axios.post('http://localhost:5000/api/tickets', {
                 window.ethereum.removeAllListeners('accountsChanged');
                 window.ethereum.removeAllListeners('chainChanged');
             }
-            if (!contract) return;      ['TicketMinted','TicketValidated','TicketTransferred','ResaleLimitSet','ExpirationSet','TicketRevoked']        .forEach(name => contract.off(name));
+            if (!contract) return;['TicketMinted', 'TicketValidated', 'TicketTransferred', 'ResaleLimitSet', 'ExpirationSet', 'TicketRevoked'].forEach(name => contract.off(name));
         };
     }, [contract]);
 
@@ -551,36 +551,36 @@ await axios.post('http://localhost:5000/api/tickets', {
         </div>
     );
     const EventPopup = () => showEventPopup && (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-      backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-      justifyContent: 'center', alignItems: 'center', zIndex: 1000
-    }}>
-      <div style={{
-        position: 'relative',
-        background: '#fff', padding: '20px', borderRadius: '8px',
-        maxWidth: '500px', width: '90%', maxHeight: '80%', overflowY: 'auto'
-      }}>
-        <button onClick={() => setShowEventPopup(false)}
-          style={{
-            position: 'absolute', top: '10px', right: '10px',
-            fontSize: '18px', border: 'none', background: 'none', cursor: 'pointer'
-          }}>×</button>
-        <h3>📋 Event Logs</h3>
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {eventLogs.map((e,i) => (
-            <li key={i} style={{ margin: '10px 0', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
-              <strong>{e.name}</strong>
-              {Object.entries(e.args).filter(([k]) => k!=='_event').map(([k,v]) =>
-                <div key={k}><em>{k}:</em> {v.toString()}</div>
-              )}
-              <small style={{ color:'#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+        <div style={{
+            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+            justifyContent: 'center', alignItems: 'center', zIndex: 1000
+        }}>
+            <div style={{
+                position: 'relative',
+                background: '#fff', padding: '20px', borderRadius: '8px',
+                maxWidth: '500px', width: '90%', maxHeight: '80%', overflowY: 'auto'
+            }}>
+                <button onClick={() => setShowEventPopup(false)}
+                    style={{
+                        position: 'absolute', top: '10px', right: '10px',
+                        fontSize: '18px', border: 'none', background: 'none', cursor: 'pointer'
+                    }}>×</button>
+                <h3>📋 Event Logs</h3>
+                <ul style={{ listStyle: 'none', padding: 0 }}>
+                    {eventLogs.map((e, i) => (
+                        <li key={i} style={{ margin: '10px 0', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
+                            <strong>{e.name}</strong>
+                            {Object.entries(e.args).filter(([k]) => k !== '_event').map(([k, v]) =>
+                                <div key={k}><em>{k}:</em> {v.toString()}</div>
+                            )}
+                            <small style={{ color: '#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
 
 
     return (
@@ -589,21 +589,21 @@ await axios.post('http://localhost:5000/api/tickets', {
                 <h1 style={{ color: '#333', margin: 0 }}>
                     🎫 EventChain Admin Panel
                 </h1>
-                
+
                 <div>
-        <button onClick={() => setShowEventPopup(true)}
-           style={{
-             marginRight: '10px',
-             padding: '8px 12px',
-            backgroundColor: '#17a2b8',
-             color: 'white',
-             border: 'none',
-             borderRadius: '4px',
-             cursor: 'pointer'
-           }}>
-           Show Events
-         </button>
-         <a href="/" style={{
+                    <button onClick={() => setShowEventPopup(true)}
+                        style={{
+                            marginRight: '10px',
+                            padding: '8px 12px',
+                            backgroundColor: '#17a2b8',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                        }}>
+                        Show Events
+                    </button>
+                    <a href="/" style={{
                         padding: '10px 20px',
                         backgroundColor: '#28a745',
                         color: 'white',
@@ -611,7 +611,7 @@ await axios.post('http://localhost:5000/api/tickets', {
                         borderRadius: '4px',
                         fontSize: '14px'
                     }}>Customer View</a>
-       </div>
+                </div>
             </div>
 
             {/* Connection Status */}
@@ -1088,7 +1088,7 @@ await axios.post('http://localhost:5000/api/tickets', {
                     )}
                 </div>
             )}
-         <EventPopup />
+            <EventPopup />
 
         </div>
     )

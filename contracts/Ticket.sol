@@ -170,6 +170,29 @@ contract EventChainTicket is ERC721, Ownable {
     }
 
     /**
+ * @dev Purchase a ticket from the current owner by sending ETH
+ */
+function purchaseTicket(uint256 tokenId) external payable {
+    address seller = ownerOf(tokenId);
+    require(seller != msg.sender, "Cannot buy your own ticket");
+
+    TicketInfo memory ticket = _tickets[tokenId];
+
+    require(block.timestamp <= ticket.expiration, "Ticket expired");
+    require(!ticket.used, "Ticket already used");
+    require(msg.value <= ticket.resalePriceCap, "Offer exceeds price cap");
+
+    // Transfer ETH to the seller
+    payable(seller).transfer(msg.value);
+
+    // Transfer the ticket to the buyer
+    _transfer(seller, msg.sender, tokenId);
+
+    emit TicketTransferred(tokenId, seller, msg.sender, msg.value);
+}
+
+
+    /**
      * @dev Retrieve ticket info
      */
     function getTicketInfo(
