@@ -177,7 +177,7 @@ events.forEach(name => {
       const totalSupply = await contractInstance.totalSupply();
       const blockchainTickets = [];
       const userTickets = [];
-
+      /*
       for (let i = 1; i <= Number(totalSupply); i++) {
         try {
           const exists = await contractInstance.exists(i);
@@ -205,7 +205,7 @@ events.forEach(name => {
         } catch (error) {
           console.error(`Error loading ticket ${i}:`, error);
         }
-      }
+      }*/
 
       // Fetch tickets from backend API
       try {
@@ -406,7 +406,7 @@ events.forEach(name => {
             onClick={() => setSelectedTicket(ticket)}
             style={{
               padding: '8px 16px',
-              backgroundColor: ticket.source === 'blockchain' ? '#007bff' : '#ff9800',
+              backgroundColor: '#007bff',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -414,7 +414,7 @@ events.forEach(name => {
               fontSize: '14px'
             }}
           >
-            {ticket.source === 'blockchain' ? 'Buy NFT' : 'Purchase'}
+            Buy Now
           </button>
         )}
       </div>
