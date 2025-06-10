@@ -18,7 +18,7 @@ router.post('/', async (req, res) => {
             return res.status(200).json(existingUser);
         }
 
-        // Create new user
+        // Create new user only if it doesn't exist
         const user = new User({
             wallet,
             isValidator: false,
@@ -28,6 +28,10 @@ router.post('/', async (req, res) => {
 
         res.status(201).json(user);
     } catch (err) {
+        if (err.code === 11000) { // Duplicate key error
+            const existingUser = await User.findOne({ wallet: req.body.wallet });
+            return res.status(200).json(existingUser);
+        }
         res.status(400).json({ error: err.message });
     }
 });

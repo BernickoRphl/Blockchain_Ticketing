@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const AutoIncrement = require('mongoose-sequence')(mongoose);
 
 const ticketSchema = new mongoose.Schema({
   tokenId: Number,
@@ -11,5 +12,7 @@ const ticketSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
+
+ticketSchema.plugin(AutoIncrement, { inc_field: 'tokenId' });
 
 module.exports = mongoose.model('Ticket', ticketSchema);

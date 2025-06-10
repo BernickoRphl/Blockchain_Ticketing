@@ -173,18 +173,33 @@ events.forEach(name => {
     try {
         setLoading(true);
         const blockchainTickets = [];
+        const myBlockchainTickets = [];
         const existingIds = new Set();
 
         // Get tickets from blockchain
         let tokenId = 1;
         while (true) {
             try {
+                const exists = await contract.exists(tokenId);
+                if (!exists) break;
+
                 const info = await contract.getTicketInfo(tokenId);
                 const owner = await contract.ownerOf(tokenId);
                 const isExpired = new Date() > new Date(Number(info[2]) * 1000);
 
-                // Only add tickets that are not owned by the current user and are valid
-                if (owner.toLowerCase() !== account.toLowerCase() && !isExpired && !info[3]) {
+                // Add to appropriate array based on ownership
+                if (owner.toLowerCase() === account.toLowerCase()) {
+                    myBlockchainTickets.push({
+                        id: tokenId,
+                        metadataURI: info[0],
+                        resalePriceCap: ethers.formatEther(info[1]),
+                        expiration: new Date(Number(info[2]) * 1000),
+                        used: info[3],
+                        owner: owner,
+                        isExpired: isExpired,
+                        source: 'blockchain'
+                    });
+                } else if (!isExpired && !info[3]) {
                     blockchainTickets.push({
                         id: tokenId,
                         metadataURI: info[0],
@@ -195,8 +210,8 @@ events.forEach(name => {
                         isExpired: isExpired,
                         source: 'blockchain'
                     });
-                    existingIds.add(tokenId);
                 }
+                existingIds.add(tokenId);
                 tokenId++;
             } catch (error) {
                 break;
@@ -207,12 +222,7 @@ events.forEach(name => {
         try {
             const response = await axios.get('http://localhost:5000/api/tickets');
             const dbTickets = response.data
-                .filter(ticket => 
-                    !existingIds.has(ticket.tokenId) && 
-                    ticket.attendee.toLowerCase() !== account.toLowerCase() &&
-                    new Date() <= new Date(ticket.expiration) &&
-                    !ticket.used
-                )
+                .filter(ticket => !existingIds.has(ticket.tokenId))
                 .map(ticket => ({
                     id: ticket.tokenId,
                     metadataURI: ticket.metadataURI,
@@ -224,10 +234,22 @@ events.forEach(name => {
                     source: 'database'
                 }));
 
-            setAvailableTickets([...blockchainTickets, ...dbTickets]);
+            // Split database tickets into owned and available
+            const myDbTickets = dbTickets.filter(ticket => 
+                ticket.owner.toLowerCase() === account.toLowerCase()
+            );
+            const availableDbTickets = dbTickets.filter(ticket => 
+                ticket.owner.toLowerCase() !== account.toLowerCase() &&
+                !ticket.used &&
+                !ticket.isExpired
+            );
+
+            setAvailableTickets([...blockchainTickets, ...availableDbTickets]);
+            setMyTickets([...myBlockchainTickets, ...myDbTickets]);
         } catch (error) {
             console.error('Error loading tickets from database:', error);
             setAvailableTickets(blockchainTickets);
+            setMyTickets(myBlockchainTickets);
         }
     } catch (error) {
         console.error('Error loading tickets:', error);
@@ -252,7 +274,13 @@ events.forEach(name => {
 
     try {
         setLoading(true);
-        const priceWei = ethers.parseEther(ticket.resalePriceCap);
+        const priceWei = ethers.parseEther(purchasePrice);
+        const maxPriceWei = ethers.parseEther(ticket.resalePriceCap);
+
+        // Validate price against resale cap
+        if (priceWei > maxPriceWei) {
+            throw new Error(`Price cannot exceed ${ticket.resalePriceCap} ETH`);
+        }
 
         const tx = await contract.transferTicket(
             account,
@@ -268,12 +296,14 @@ events.forEach(name => {
             tokenId: ticket.id,
             from: ticket.owner,
             to: account,
-            priceETH: ticket.resalePriceCap,
+            priceETH: purchasePrice,
             txHash: tx.hash,
             type: 'transfer'
         });
 
         alert('Ticket purchased successfully!');
+        setSelectedTicket(null);
+        setPurchasePrice('');
         await loadTickets();
 
     } catch (error) {

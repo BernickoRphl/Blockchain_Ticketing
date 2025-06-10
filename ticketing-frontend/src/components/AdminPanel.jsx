@@ -329,32 +329,32 @@ const AdminPanel = () => {
         }
 
         try {
-            // Check if ticket exists by trying to get its info
-            try {
-                const info = await contract.getTicketInfo(selectedTicketId);
-                const owner = await contract.ownerOf(selectedTicketId);
-
-                setTicketInfo({
-                    metadataURI: info[0],
-                    resalePriceCap: ethers.formatEther(info[1]),
-                    expiration: new Date(Number(info[2]) * 1000),
-                    used: info[3],
-                    owner: owner
-                });
-
-                // Set current values for editing
-                setNewPriceCap(ethers.formatEther(info[1]));
-                setNewExpirationDays(Math.ceil((Number(info[2]) * 1000 - Date.now()) / (24 * 60 * 60 * 1000)));
-            } catch (error) {
-                if (error.message.includes("ERC721: invalid token ID")) {
-                    alert('Ticket does not exist');
-                } else {
-                    throw error;
-                }
+            // Check if ticket exists
+            const exists = await contract.exists(selectedTicketId);
+            if (!exists) {
+                alert('Ticket does not exist');
+                setTicketInfo(null);
+                return;
             }
+
+            const info = await contract.getTicketInfo(selectedTicketId);
+            const owner = await contract.ownerOf(selectedTicketId);
+
+            setTicketInfo({
+                metadataURI: info[0],
+                resalePriceCap: ethers.formatEther(info[1]),
+                expiration: new Date(Number(info[2]) * 1000),
+                used: info[3],
+                owner: owner
+            });
+
+            // Set current values for editing
+            setNewPriceCap(ethers.formatEther(info[1]));
+            setNewExpirationDays(Math.ceil((Number(info[2]) * 1000 - Date.now()) / (24 * 60 * 60 * 1000)));
         } catch (error) {
             console.error('Error getting ticket info:', error);
             alert('Error getting ticket info: ' + (error.reason || error.message));
+            setTicketInfo(null);
         }
     };
 
