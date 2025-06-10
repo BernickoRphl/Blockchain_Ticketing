@@ -13,13 +13,11 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET all tickets (optional)
+// GET all tickets
 router.get('/', async (req, res) => {
   const tickets = await Ticket.find().sort({ createdAt: -1 });
   res.json(tickets);
 });
-
-module.exports = router;
 
 // GET ticket by tokenId
 router.get('/:tokenId', async (req, res) => {
