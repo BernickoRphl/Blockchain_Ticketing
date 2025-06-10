@@ -9,7 +9,14 @@ app.use(express.json());
 
 // Routes
 const ticketRoutes = require('./routes/tickets');
+const userRoutes = require('./routes/users');
+const transactionRoutes = require('./routes/transactions');
+const validateTicketRoutes = require('./routes/validate-ticket');
+
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/transactions', transactionRoutes);
+app.use('/api/validate-ticket', validateTicketRoutes);
 
 // DB Connection
 mongoose.connect(process.env.MONGODB_URI, {

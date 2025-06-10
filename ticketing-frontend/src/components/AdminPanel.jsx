@@ -146,6 +146,15 @@ const AdminPanel = () => {
                 method: 'eth_requestAccounts'
             });
 
+            // Add user to database if not exists
+            try {
+                await axios.post('http://localhost:5000/api/users', {
+                    wallet: accounts[0]
+                });
+            } catch (error) {
+                console.error('Error adding user to database:', error);
+            }
+
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
@@ -166,25 +175,13 @@ const AdminPanel = () => {
                 setIsOwner(isOwner);
 
                 if (isOwner) {
-                    await loadContractData(contract);
+                    await loadContractData();
                 } else {
                     alert('You are not the contract owner. Admin functions will be disabled.');
                 }
-
             } catch (error) {
                 console.error('Error checking contract details:', error);
             }
-            const events = [
-     'TicketMinted','TicketValidated',
-     'TicketTransferred','ResaleLimitSet',     'ExpirationSet','TicketRevoked'   ];
-   events.forEach(name => {
-     contract.on(name, (...args) => {
-       const e = args[args.length - 1];
-       setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
-       setShowEventPopup(true);
-     });
-   });
-
         } catch (error) {
             console.error('Error connecting wallet:', error);
             alert('Error connecting wallet: ' + error.message);
@@ -196,23 +193,65 @@ const AdminPanel = () => {
         if (!contract) return;
 
         try {
-            // Add error handling for each contract call
+            setLoading(true);
             console.log("Loading contract data...");
 
-            // Example of safe data loading with error handling
-            const totalSupply = await contract.balanceOf(await contract.signer.getAddress()).catch(err => {
-                console.warn("Could not get balance:", err);
-                return 0;
-            });
+            // Get tickets from blockchain
+            const blockchainTickets = [];
+            let tokenId = 1;
+            while (true) {
+                try {
+                    const exists = await contract.exists(tokenId);
+                    if (!exists) break;
 
-            // If you're trying to get ticket info, make sure the token exists first
-            // Don't call getTicketInfo on non-existent tokens
+                    const info = await contract.getTicketInfo(tokenId);
+                    const owner = await contract.ownerOf(tokenId);
+                    
+                    blockchainTickets.push({
+                        id: tokenId,
+                        metadataURI: info[0],
+                        resalePriceCap: ethers.formatEther(info[1]),
+                        expiration: new Date(Number(info[2]) * 1000),
+                        used: info[3],
+                        owner: owner,
+                        isExpired: new Date() > new Date(Number(info[2]) * 1000),
+                        source: 'blockchain'
+                    });
+                    tokenId++;
+                } catch (error) {
+                    break;
+                }
+            }
+
+            // Get tickets from database
+            try {
+                const response = await axios.get('http://localhost:5000/api/tickets');
+                const dbTickets = response.data.map(ticket => ({
+                    id: ticket.tokenId,
+                    metadataURI: ticket.metadataURI,
+                    resalePriceCap: ticket.priceCap,
+                    expiration: new Date(ticket.expiration),
+                    used: false,
+                    owner: ticket.attendee,
+                    isExpired: new Date() > new Date(ticket.expiration),
+                    source: 'database'
+                }));
+
+                // Combine tickets from both sources
+                const allTickets = [...blockchainTickets, ...dbTickets];
+                setAllTickets(allTickets);
+                setTotalTickets(allTickets.length);
+            } catch (error) {
+                console.error('Error loading tickets from database:', error);
+                setAllTickets(blockchainTickets);
+                setTotalTickets(blockchainTickets.length);
+            }
 
             console.log("Contract data loaded successfully");
-
         } catch (error) {
             console.error("Error in loadContractData:", error);
-            // Don't throw the error, just log it
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -230,13 +269,6 @@ const AdminPanel = () => {
             const priceCapWei = ethers.parseEther(priceCap);
             const expirationTimestamp = Math.floor(Date.now() / 1000) + (parseInt(expirationDays) * 24 * 60 * 60);
 
-            console.log("Minting with params:", {
-                attendeeAddress,
-                metadataURI,
-                priceCapWei: priceCapWei.toString(),
-                expirationTimestamp
-            });
-
             const tx = await contract.mintTicket(
                 attendeeAddress,
                 metadataURI,
@@ -245,21 +277,28 @@ const AdminPanel = () => {
             );
 
             setTxHash(tx.hash);
-            console.log("Transaction sent, waiting for confirmation...");
-
             const receipt = await tx.wait();
-            console.log("Transaction confirmed:", receipt);
             const event = receipt.logs.find(log => log.eventName === 'TicketMinted');
-const tokenId = event ? event.args.tokenId.toString() : null;
+            const tokenId = event ? event.args.tokenId.toString() : null;
 
-await axios.post('http://localhost:5000/api/tickets', {
-  tokenId,
-  metadataURI,
-  attendee: attendeeAddress,
-  priceCap,
-  expiration: new Date(expirationTimestamp * 1000)
-});
-            
+            // Add ticket to database
+            await axios.post('http://localhost:5000/api/tickets', {
+                tokenId,
+                metadataURI,
+                attendee: attendeeAddress,
+                priceCap,
+                expiration: new Date(expirationTimestamp * 1000)
+            });
+
+            // Add transaction to database
+            await axios.post('http://localhost:5000/api/transactions', {
+                tokenId,
+                from: account,
+                to: attendeeAddress,
+                priceETH: priceCap,
+                txHash: tx.hash,
+                type: 'mint'
+            });
 
             alert('Ticket minted successfully!');
 
@@ -269,22 +308,12 @@ await axios.post('http://localhost:5000/api/tickets', {
             setPriceCap('');
             setExpirationDays('30');
 
-            // Then reload data with delay to ensure blockchain state is updated
-            setTimeout(() => {
-                loadContractData().catch(err => {
-                    console.warn("Failed to reload contract data:", err);
-                });
-            }, 1000);
+            // Then reload data
+            await loadContractData();
 
         } catch (error) {
             console.error('Error minting ticket:', error);
-
-            // More detailed error reporting
-            if (error.code === 'CALL_EXCEPTION') {
-                alert('Contract call failed. Check console for details.');
-            } else {
-                alert('Error minting ticket: ' + (error.reason || error.message));
-            }
+            alert('Error minting ticket: ' + (error.reason || error.message));
         } finally {
             setLoading(false);
         }
@@ -395,7 +424,17 @@ await axios.post('http://localhost:5000/api/tickets', {
 
             const tx = await contract.revokeTicket(selectedTicketId);
             setTxHash(tx.hash);
-            await tx.wait();
+            const receipt = await tx.wait();
+
+            // Add transaction to database
+            await axios.post('http://localhost:5000/api/transactions', {
+                tokenId: selectedTicketId,
+                from: account,
+                to: account,
+                priceETH: "0",
+                txHash: tx.hash,
+                type: 'revoke'
+            });
 
             alert('Ticket revoked successfully!');
             setTicketInfo(null);
@@ -420,12 +459,24 @@ await axios.post('http://localhost:5000/api/tickets', {
         try {
             setLoading(true);
 
+            // Check if user exists in database
+            const userResponse = await axios.get(`http://localhost:5000/api/users/${validatorAddress}`);
+            if (!userResponse.data) {
+                throw new Error('User not found in database');
+            }
+
             const tx = await contract.setValidator(validatorAddress, validatorStatus);
             setTxHash(tx.hash);
             await tx.wait();
 
+            // Update user's validator status in database
+            await axios.patch(`http://localhost:5000/api/users/${validatorAddress}/validator`, {
+                isValidator: validatorStatus
+            });
+
             alert(`Validator ${validatorStatus ? 'added' : 'removed'} successfully!`);
             setValidatorAddress('');
+            await loadContractData();
 
         } catch (error) {
             console.error('Error setting validator:', error);
@@ -445,9 +496,28 @@ await axios.post('http://localhost:5000/api/tickets', {
         try {
             setLoading(true);
 
+            // Check if user is validator in database
+            const userResponse = await axios.get(`http://localhost:5000/api/users/${account}`);
+            if (!userResponse.data || !userResponse.data.isValidator) {
+                throw new Error('You are not authorized to validate tickets');
+            }
+
+            // Check if ticket exists
+            const exists = await contract.exists(validateTicketId);
+            if (!exists) {
+                throw new Error('Ticket does not exist');
+            }
+
             const tx = await contract.validateTicket(validateTicketId);
             setTxHash(tx.hash);
-            await tx.wait();
+            const receipt = await tx.wait();
+
+            // Add validation to database
+            await axios.post('http://localhost:5000/api/validate-ticket', {
+                tokenId: validateTicketId,
+                validator: account,
+                txHash: tx.hash
+            });
 
             alert('Ticket validated successfully!');
             setValidateTicketId('');
@@ -474,6 +544,9 @@ await axios.post('http://localhost:5000/api/tickets', {
                     if (contract) {
                         contract.owner().then(owner => {
                             setIsOwner(owner.toLowerCase() === accounts[0].toLowerCase());
+                            if (owner.toLowerCase() === accounts[0].toLowerCase()) {
+                                loadContractData();
+                            }
                         });
                     }
                 }
@@ -484,14 +557,21 @@ await axios.post('http://localhost:5000/api/tickets', {
             });
         }
 
+        // Load contract data when contract is available and user is owner
+        if (contract && isOwner) {
+            loadContractData();
+        }
+
         return () => {
             if (window.ethereum) {
                 window.ethereum.removeAllListeners('accountsChanged');
                 window.ethereum.removeAllListeners('chainChanged');
             }
-            if (!contract) return;      ['TicketMinted','TicketValidated','TicketTransferred','ResaleLimitSet','ExpirationSet','TicketRevoked']        .forEach(name => contract.off(name));
+            if (!contract) return;
+            ['TicketMinted','TicketValidated','TicketTransferred','ResaleLimitSet','ExpirationSet','TicketRevoked']
+                .forEach(name => contract.off(name));
         };
-    }, [contract]);
+    }, [contract, isOwner]);
 
     const TabButton = ({ id, label, active, onClick }) => (
         <button
@@ -692,7 +772,7 @@ await axios.post('http://localhost:5000/api/tickets', {
                         <TabButton id="overview" label="📊 Overview" active={activeTab === 'overview'} onClick={setActiveTab} />
                     </div>
 
-                    {/* Mint Tickets Tab */}
+                    {/* Tab Content */}
                     {activeTab === 'mint' && (
                         <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
                             <h2 style={{ marginTop: '0', color: '#28a745' }}>🎫 Mint New Ticket</h2>
@@ -796,7 +876,6 @@ await axios.post('http://localhost:5000/api/tickets', {
                         </div>
                     )}
 
-                    {/* Manage Tickets Tab */}
                     {activeTab === 'manage' && (
                         <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px', backgroundColor: '#f8f9ff' }}>
                             <h2 style={{ marginTop: '0', color: '#007bff' }}>⚙️ Manage Tickets</h2>
@@ -977,109 +1056,106 @@ await axios.post('http://localhost:5000/api/tickets', {
                                     {loading ? 'Revoking...' : 'Revoke Ticket'}
                                 </button>
                             </div>
+                        </div>
+                    )}
 
-                            {/* Validate Tickets Tab */}
-                            {activeTab === 'validate' && (
-                                <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
-                                    <h2 style={{ marginTop: '0', color: '#28a745' }}>✅ Validate Ticket</h2>
+                    {activeTab === 'validate' && (
+                        <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
+                            <h2 style={{ marginTop: '0', color: '#28a745' }}>✅ Validate Ticket</h2>
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                                <input
+                                    type="number"
+                                    value={validateTicketId}
+                                    onChange={(e) => setValidateTicketId(e.target.value)}
+                                    placeholder="Enter Ticket ID"
+                                    style={{
+                                        flex: '1',
+                                        padding: '10px',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                                <button
+                                    onClick={validateTicket}
+                                    disabled={loading}
+                                    style={{
+                                        padding: '10px 20px',
+                                        backgroundColor: loading ? '#6c757d' : '#28a745',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: loading ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {loading ? 'Validating...' : 'Validate Ticket'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
-                                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                                        <input
-                                            type="number"
-                                            value={validateTicketId}
-                                            onChange={(e) => setValidateTicketId(e.target.value)}
-                                            placeholder="Enter Ticket ID"
-                                            style={{
-                                                flex: '1',
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px'
-                                            }}
-                                        />
-                                        <button
-                                            onClick={validateTicket}
-                                            style={{
-                                                padding: '10px 20px',
-                                                backgroundColor: '#007bff',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '4px',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            Validate Ticket
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                    {activeTab === 'validators' && (
+                        <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px', backgroundColor: '#f8f9ff' }}>
+                            <h2 style={{ marginTop: '0', color: '#007bff' }}>👥 Validators</h2>
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                                <input
+                                    type="text"
+                                    value={validatorAddress}
+                                    onChange={(e) => setValidatorAddress(e.target.value)}
+                                    placeholder="Enter Validator Address"
+                                    style={{
+                                        flex: '1',
+                                        padding: '10px',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                                <select
+                                    value={validatorStatus ? "true" : "false"}
+                                    onChange={(e) => setValidatorStatus(e.target.value === "true")}
+                                    style={{
+                                        padding: '10px',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        fontSize: '14px'
+                                    }}
+                                >
+                                    <option value="true">Add Validator</option>
+                                    <option value="false">Remove Validator</option>
+                                </select>
+                                <button
+                                    onClick={setValidator}
+                                    disabled={loading || !validatorAddress}
+                                    style={{
+                                        padding: '10px 20px',
+                                        backgroundColor: loading ? '#6c757d' : '#007bff',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: loading ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {loading ? 'Processing...' : validatorStatus ? "Add Validator" : "Remove Validator"}
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
-                            {/* Validators Tab */}
-                            {activeTab === 'validators' && (
-                                <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px', backgroundColor: '#f8f9ff' }}>
-                                    <h2 style={{ marginTop: '0', color: '#007bff' }}>👥 Validators</h2>
-
-                                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                                        <input
-                                            type="text"
-                                            value={validatorAddress}
-                                            onChange={(e) => setValidatorAddress(e.target.value)}
-                                            placeholder="Enter Validator Address"
-                                            style={{
-                                                flex: '1',
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px'
-                                            }}
-                                        />
-                                        <select
-                                            value={validatorStatus}
-                                            onChange={(e) => setValidatorStatus(e.target.value)}
-                                            style={{
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px'
-                                            }}
-                                        >
-                                            <option value="true">Add Validator</option>
-                                            <option value="false">Remove Validator</option>
-                                        </select>
-                                        <button
-                                            onClick={setValidator}
-                                            disabled={loading || !validatorAddress}
-                                            style={{
-                                                padding: '10px 20px',
-                                                backgroundColor: loading ? '#6c757d' : '#007bff',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '4px',
-                                                cursor: loading ? 'not-allowed' : 'pointer'
-                                            }}
-                                        >
-                                            {loading ? 'Processing...' : validatorStatus === "true" ? "Add Validator" : "Remove Validator"}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Overview Tab */}
-                            {activeTab === 'overview' && (
-                                <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
-                                    <h2 style={{ marginTop: '0', color: '#28a745' }}>📊 Ticket Overview</h2>
-
-                                    {loading ? (
-                                        <p>Loading tickets...</p>
+                    {activeTab === 'overview' && (
+                        <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
+                            <h2 style={{ marginTop: '0', color: '#28a745' }}>📊 Ticket Overview</h2>
+                            {loading ? (
+                                <p>Loading tickets...</p>
+                            ) : (
+                                <div>
+                                    {allTickets.length === 0 ? (
+                                        <p>No tickets found.</p>
                                     ) : (
-                                        <div>
-                                            {allTickets.length === 0 ? (
-                                                <p>No tickets found.</p>
-                                            ) : (
-                                                allTickets.map(ticket => (
-                                                    <TicketCard key={ticket.id} ticket={ticket} />
-                                                ))
-                                            )}
+                                        <div style={{ display: 'grid', gap: '15px' }}>
+                                            {allTickets.map(ticket => (
+                                                <TicketCard key={`${ticket.source}-${ticket.id}`} ticket={ticket} />
+                                            ))}
                                         </div>
                                     )}
                                 </div>

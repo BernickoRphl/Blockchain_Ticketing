@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import axios from 'axios';
 
 // Replace with your deployed contract address after running deploy script
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
@@ -110,7 +111,6 @@ const [eventLogs, setEventLogs] = useState([]);
         return;
       }
 
-      // Check if on local network
       const isLocal = await isLocalNetwork();
       if (!isLocal) {
         const shouldSwitch = window.confirm(
@@ -127,11 +127,19 @@ const [eventLogs, setEventLogs] = useState([]);
         method: 'eth_requestAccounts'
       });
 
+      // Add user to database if not exists
+      try {
+        await axios.post('http://localhost:5000/api/users', {
+          wallet: accounts[0]
+        });
+      } catch (error) {
+        console.error('Error adding user to database:', error);
+      }
+
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      // Get network info
       const network = await provider.getNetwork();
       const networkName = await getNetworkName('0x' + network.chainId.toString(16));
 
@@ -164,8 +172,10 @@ events.forEach(name => {
 
     try {
       setLoading(true);
+      
+      // Fetch tickets from blockchain
       const totalSupply = await contractInstance.totalSupply();
-      const tickets = [];
+      const blockchainTickets = [];
       const userTickets = [];
 
       for (let i = 1; i <= Number(totalSupply); i++) {
@@ -183,21 +193,56 @@ events.forEach(name => {
             expiration: new Date(Number(info[2]) * 1000),
             used: info[3],
             owner: owner,
-            isExpired: new Date() > new Date(Number(info[2]) * 1000)
+            isExpired: new Date() > new Date(Number(info[2]) * 1000),
+            source: 'blockchain'
           };
 
           if (owner.toLowerCase() === userAccount.toLowerCase()) {
             userTickets.push(ticketData);
           } else if (!ticketData.used && !ticketData.isExpired) {
-            tickets.push(ticketData);
+            blockchainTickets.push(ticketData);
           }
         } catch (error) {
           console.error(`Error loading ticket ${i}:`, error);
         }
       }
 
-      setAvailableTickets(tickets);
-      setMyTickets(userTickets);
+      // Fetch tickets from backend API
+      try {
+        const response = await fetch('http://localhost:5000/api/tickets');
+        const dbTickets = await response.json();
+        
+        // Convert database tickets to the same format
+        const formattedDbTickets = dbTickets.map(ticket => ({
+          id: ticket.tokenId,
+          metadataURI: ticket.metadataURI,
+          resalePriceCap: ticket.priceCap,
+          expiration: new Date(ticket.expiration),
+          used: false,
+          owner: ticket.attendee,
+          isExpired: new Date() > new Date(ticket.expiration),
+          source: 'database'
+        }));
+
+        // Add database tickets to available tickets if they're not owned by the user
+        const availableDbTickets = formattedDbTickets.filter(ticket => 
+          ticket.owner.toLowerCase() !== userAccount.toLowerCase() && 
+          !ticket.isExpired
+        );
+
+        // Add database tickets to user tickets if they're owned by the user
+        const userDbTickets = formattedDbTickets.filter(ticket => 
+          ticket.owner.toLowerCase() === userAccount.toLowerCase()
+        );
+
+        setAvailableTickets([...blockchainTickets, ...availableDbTickets]);
+        setMyTickets([...userTickets, ...userDbTickets]);
+      } catch (error) {
+        console.error('Error loading tickets from database:', error);
+        // If database fetch fails, still show blockchain tickets
+        setAvailableTickets(blockchainTickets);
+        setMyTickets(userTickets);
+      }
     } catch (error) {
       console.error('Error loading tickets:', error);
     } finally {
@@ -207,41 +252,28 @@ events.forEach(name => {
 
   // Purchase ticket (transfer from current owner)
   const purchaseTicket = async (ticketId, price) => {
-    if (!contract || !price) {
-      alert('Please enter a valid price');
+    if (!contract || !account) {
+      alert('Please connect your wallet first');
       return;
     }
 
     try {
       setLoading(true);
-      setTxHash('');
 
-      const priceWei = ethers.parseEther(price);
-      
-      // Get ticket info to check price cap
-      const info = await contract.getTicketInfo(ticketId);
-      const priceCap = info[1];
-      
-      if (priceWei > priceCap) {
-        alert(`Price exceeds the maximum allowed price of ${ethers.formatEther(priceCap)} ETH`);
-        return;
-      }
+      const tx = await contract.transferTicket(account, ticketId, ethers.parseEther(price));
+      const receipt = await tx.wait();
 
-      const tx = await contract.transferTicket(account, ticketId, priceWei, {
-        value: priceWei // Send ETH with the transaction
+      // Add transaction to database
+      await axios.post('http://localhost:5000/api/transactions', {
+        tokenId: ticketId,
+        from: account,
+        to: account,
+        priceETH: price,
+        txHash: tx.hash,
+        type: 'transfer'
       });
 
-      setTxHash(tx.hash);
-      console.log('Purchase transaction sent:', tx.hash);
-
-      const receipt = await tx.wait();
-      console.log('Purchase confirmed:', receipt);
-
       alert('Ticket purchased successfully!');
-      setSelectedTicket(null);
-      setPurchasePrice('');
-      
-      // Reload tickets
       await loadTickets();
 
     } catch (error) {
@@ -332,6 +364,16 @@ events.forEach(name => {
         <div style={{ flex: 1 }}>
           <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>
             Ticket #{ticket.id}
+            <span style={{ 
+              fontSize: '12px', 
+              marginLeft: '8px',
+              padding: '2px 6px',
+              backgroundColor: ticket.source === 'blockchain' ? '#e3f2fd' : '#fff3e0',
+              color: ticket.source === 'blockchain' ? '#1976d2' : '#f57c00',
+              borderRadius: '4px'
+            }}>
+              {ticket.source === 'blockchain' ? 'NFT' : 'Database'}
+            </span>
           </h4>
           <p style={{ margin: '5px 0', fontSize: '14px', color: '#666' }}>
             <strong>Metadata:</strong> {ticket.metadataURI}
@@ -364,7 +406,7 @@ events.forEach(name => {
             onClick={() => setSelectedTicket(ticket)}
             style={{
               padding: '8px 16px',
-              backgroundColor: '#007bff',
+              backgroundColor: ticket.source === 'blockchain' ? '#007bff' : '#ff9800',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -372,7 +414,7 @@ events.forEach(name => {
               fontSize: '14px'
             }}
           >
-            Buy Now
+            {ticket.source === 'blockchain' ? 'Buy NFT' : 'Purchase'}
           </button>
         )}
       </div>
