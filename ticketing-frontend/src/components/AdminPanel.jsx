@@ -22,6 +22,7 @@ const CONTRACT_ABI = [
     "function balanceOf(address owner) external view returns (uint256)",
     "function validators(address) external view returns (bool)",
     "function owner() external view returns (address)",
+    "function exists(uint256 tokenId) external view returns (bool)",
     "event TicketMinted(uint256 indexed tokenId, address indexed attendee, string metadataURI)",
     "event TicketValidated(uint256 indexed tokenId, address indexed validator)",
     "event TicketTransferred(uint256 indexed tokenId, address from, address to, uint256 price)",
