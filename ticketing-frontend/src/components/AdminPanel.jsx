@@ -12,7 +12,7 @@ const CONTRACT_ABI = [
     "function mintTicket(address attendee, string calldata metadataURI, uint256 priceCap, uint256 expirationTimestamp) external returns (uint256)",
     "function validateTicket(uint256 tokenId) external",
     "function transferTicket(address to, uint256 tokenId, uint256 price) external",
-    "function setValidator(address validator, bool status) external",
+    // "function setValidator(address validator, bool status) external",
     "function setResaleLimit(uint256 tokenId, uint256 newCap) external",
     "function setExpiration(uint256 tokenId, uint256 newExpiration) external",
     "function revokeTicket(uint256 tokenId) external",
@@ -436,29 +436,29 @@ const AdminPanel = () => {
     };
 
     // Set validator
-    const setValidator = async () => {
-        if (!contract || !validatorAddress) {
-            alert('Please enter validator address');
-            return;
-        }
+    // const setValidator = async () => {
+    //     if (!contract || !validatorAddress) {
+    //         alert('Please enter validator address');
+    //         return;
+    //     }
 
-        try {
-            setLoading(true);
+    //     try {
+    //         setLoading(true);
 
-            const tx = await contract.setValidator(validatorAddress, validatorStatus);
-            setTxHash(tx.hash);
-            await tx.wait();
+    //         const tx = await contract.setValidator(validatorAddress, validatorStatus);
+    //         setTxHash(tx.hash);
+    //         await tx.wait();
 
-            alert(`Validator ${validatorStatus ? 'added' : 'removed'} successfully!`);
-            setValidatorAddress('');
+    //         alert(`Validator ${validatorStatus ? 'added' : 'removed'} successfully!`);
+    //         setValidatorAddress('');
 
-        } catch (error) {
-            console.error('Error setting validator:', error);
-            alert('Error setting validator: ' + (error.reason || error.message));
-        } finally {
-            setLoading(false);
-        }
-    };
+    //     } catch (error) {
+    //         console.error('Error setting validator:', error);
+    //         alert('Error setting validator: ' + (error.reason || error.message));
+    //     } finally {
+    //         setLoading(false);
+    //     }
+    // };
 
     // Validate ticket
     const validateTicket = async () => {
@@ -713,7 +713,7 @@ const AdminPanel = () => {
                         <TabButton id="mint" label="🎫 Mint Tickets" active={activeTab === 'mint'} onClick={setActiveTab} />
                         <TabButton id="manage" label="⚙️ Manage Tickets" active={activeTab === 'manage'} onClick={setActiveTab} />
                         <TabButton id="validate" label="✅ Validate Tickets" active={activeTab === 'validate'} onClick={setActiveTab} />
-                        <TabButton id="validators" label="👥 Validators" active={activeTab === 'validators'} onClick={setActiveTab} />
+                        {/* <TabButton id="validators" label="👥 Validators" active={activeTab === 'validators'} onClick={setActiveTab} /> */}
                         <TabButton id="overview" label="📊 Overview" active={activeTab === 'overview'} onClick={setActiveTab} />
                     </div>
 
@@ -1060,7 +1060,7 @@ const AdminPanel = () => {
                     )}
 
                     {/* Validators Tab */}
-                    {activeTab === 'validators' && (
+                    {/* {activeTab === 'validators' && (
                         <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px', backgroundColor: '#f8f9ff' }}>
                             <h2 style={{ marginTop: '0', color: '#007bff' }}>👥 Validators</h2>
 
@@ -1123,7 +1123,7 @@ const AdminPanel = () => {
                                 </ul>
                             </div>
                         </div>
-                    )}
+                    )} */}
 
                     {/* Overview Tab */}
                     {activeTab === 'overview' && (
