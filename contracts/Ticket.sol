@@ -34,6 +34,7 @@ contract EventChainTicket is ERC721, Ownable {
         uint256 resalePriceCap;
         uint256 expiration;
         bool used;
+        string name;
     }
 
     mapping(uint256 => TicketInfo) private _tickets;
@@ -81,6 +82,7 @@ contract EventChainTicket is ERC721, Ownable {
         string calldata metadataURI,
         uint256 priceCap,
         uint256 expirationTimestamp
+        string name;
     ) external onlyOrganizer returns (uint256) {
         _tokenIds += 1;
         uint256 newId = _tokenIds;

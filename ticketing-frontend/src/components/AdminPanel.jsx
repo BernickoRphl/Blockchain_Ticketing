@@ -9,7 +9,7 @@ const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 // 0x5FbDB2315678afecb367f032d93F642f64180aa3
 // Complete ABI for EventChainTicket contract
 const CONTRACT_ABI = [
-    "function mintTicket(address attendee, string calldata metadataURI, uint256 priceCap, uint256 expirationTimestamp) external returns (uint256)",
+    "function mintTicket(address attendee, string calldata metadataURI, uint256 priceCap, uint256 expirationTimestamp) external returns (uint256), string name",
     "function validateTicket(uint256 tokenId) external",
     "function transferTicket(address to, uint256 tokenId, uint256 price) external",
     "function setValidator(address validator, bool status) external",
@@ -241,7 +241,8 @@ const AdminPanel = () => {
                 attendeeAddress,
                 metadataURI,
                 priceCapWei,
-                expirationTimestamp
+                expirationTimestamp,
+                ticketName,
             );
 
             setTxHash(tx.hash);
