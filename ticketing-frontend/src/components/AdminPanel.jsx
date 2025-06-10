@@ -22,9 +22,8 @@ const CONTRACT_ABI = [
     "function balanceOf(address owner) external view returns (uint256)",
     "function validators(address) external view returns (bool)",
     "function owner() external view returns (address)",
-    // Remove these two lines - they don't exist in your contract:
-    // "function totalSupply() external view returns (uint256)",
-    // "function exists(uint256 tokenId) external view returns (bool)",
+    "function totalSupply() external view returns (uint256)",
+    "function exists(uint256 tokenId) external view returns (bool)",
     "event TicketMinted(uint256 indexed tokenId, address indexed attendee, string metadataURI)",
     "event TicketValidated(uint256 indexed tokenId, address indexed validator)",
     "event TicketTransferred(uint256 indexed tokenId, address from, address to, uint256 price)",
@@ -32,6 +31,7 @@ const CONTRACT_ABI = [
     "event ExpirationSet(uint256 indexed tokenId, uint256 expirationTimestamp)",
     "event TicketRevoked(uint256 indexed tokenId)"
 ];
+
 
 const AdminPanel = () => {
     const [account, setAccount] = useState('');
@@ -192,27 +192,16 @@ const AdminPanel = () => {
     };
 
     // Load all contract data
-    const loadContractData = async () => {
-        if (!contract) return;
+    const loadContractData = async (contractInstance = contract) => {
+        if (!contractInstance) return;
 
         try {
-            // Add error handling for each contract call
-            console.log("Loading contract data...");
-
-            // Example of safe data loading with error handling
-            const totalSupply = await contract.balanceOf(await contract.signer.getAddress()).catch(err => {
-                console.warn("Could not get balance:", err);
-                return 0;
-            });
-
-            // If you're trying to get ticket info, make sure the token exists first
-            // Don't call getTicketInfo on non-existent tokens
-
-            console.log("Contract data loaded successfully");
-
+            setLoading(true);
+            await loadAllTickets(contractInstance);
         } catch (error) {
             console.error("Error in loadContractData:", error);
-            // Don't throw the error, just log it
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -287,6 +276,42 @@ const AdminPanel = () => {
             }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadAllTickets = async (contract) => {
+        if (!contract) return;
+
+        try {
+            const totalSupply = await contract.totalSupply();
+            const tickets = [];
+
+            // Loop through all token IDs
+            for (let i = 1; i <= totalSupply; i++) {
+                try {
+                    const exists = await contract.exists(i);
+                    if (exists) {
+                        const info = await contract.getTicketInfo(i);
+                        const owner = await contract.ownerOf(i);
+
+                        tickets.push({
+                            id: i,
+                            metadataURI: info.metadataURI,
+                            resalePriceCap: ethers.formatEther(info.resalePriceCap),
+                            expiration: new Date(Number(info.expiration) * 1000),
+                            used: info.used,
+                            owner: owner
+                        });
+                    }
+                } catch (error) {
+                    console.log(`Token ${i} may have been revoked`);
+                }
+            }
+
+            setAllTickets(tickets);
+            setTotalTickets(tickets.length);
+        } catch (error) {
+            console.error('Error loading tickets:', error);
         }
     };
 
@@ -550,6 +575,7 @@ const AdminPanel = () => {
             </div>
         </div>
     );
+
     const EventPopup = () => showEventPopup && (
         <div style={{
             position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
@@ -581,7 +607,6 @@ const AdminPanel = () => {
             </div>
         </div>
     );
-
 
     return (
         <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto', fontFamily: 'Arial, sans-serif' }}>
@@ -944,6 +969,7 @@ const AdminPanel = () => {
                                     </div>
                                 </div>
                             )}
+
                             <div style={{ marginBottom: '20px' }}>
                                 <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
                                     Ticket ID to Revoke:
@@ -977,109 +1003,176 @@ const AdminPanel = () => {
                                     {loading ? 'Revoking...' : 'Revoke Ticket'}
                                 </button>
                             </div>
+                        </div>
+                    )}
 
-                            {/* Validate Tickets Tab */}
-                            {activeTab === 'validate' && (
-                                <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
-                                    <h2 style={{ marginTop: '0', color: '#28a745' }}>✅ Validate Ticket</h2>
+                    {/* Validate Tickets Tab */}
+                    {activeTab === 'validate' && (
+                        <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
+                            <h2 style={{ marginTop: '0', color: '#28a745' }}>✅ Validate Ticket</h2>
 
-                                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                                        <input
-                                            type="number"
-                                            value={validateTicketId}
-                                            onChange={(e) => setValidateTicketId(e.target.value)}
-                                            placeholder="Enter Ticket ID"
-                                            style={{
-                                                flex: '1',
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px'
-                                            }}
-                                        />
-                                        <button
-                                            onClick={validateTicket}
-                                            style={{
-                                                padding: '10px 20px',
-                                                backgroundColor: '#007bff',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '4px',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            Validate Ticket
-                                        </button>
-                                    </div>
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                                <input
+                                    type="number"
+                                    value={validateTicketId}
+                                    onChange={(e) => setValidateTicketId(e.target.value)}
+                                    placeholder="Enter Ticket ID"
+                                    style={{
+                                        flex: '1',
+                                        padding: '10px',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                                <button
+                                    onClick={validateTicket}
+                                    disabled={loading || !validateTicketId}
+                                    style={{
+                                        padding: '10px 20px',
+                                        backgroundColor: loading ? '#6c757d' : '#28a745',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: loading ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {loading ? 'Validating...' : 'Validate Ticket'}
+                                </button>
+                            </div>
+
+                            <div style={{
+                                backgroundColor: '#fff',
+                                padding: '15px',
+                                borderRadius: '4px',
+                                border: '1px solid #e9ecef',
+                                marginTop: '20px'
+                            }}>
+                                <h4 style={{ marginTop: '0', color: '#333' }}>Instructions:</h4>
+                                <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
+                                    <li>Enter the Ticket ID you want to validate</li>
+                                    <li>Click "Validate Ticket" to mark it as used</li>
+                                    <li>Only valid, unused tickets can be validated</li>
+                                    <li>This action cannot be undone</li>
+                                </ul>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Validators Tab */}
+                    {activeTab === 'validators' && (
+                        <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px', backgroundColor: '#f8f9ff' }}>
+                            <h2 style={{ marginTop: '0', color: '#007bff' }}>👥 Validators</h2>
+
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                                <input
+                                    type="text"
+                                    value={validatorAddress}
+                                    onChange={(e) => setValidatorAddress(e.target.value)}
+                                    placeholder="Enter Validator Address (0x...)"
+                                    style={{
+                                        flex: '1',
+                                        padding: '10px',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                                <select
+                                    value={validatorStatus}
+                                    onChange={(e) => setValidatorStatus(e.target.value)}
+                                    style={{
+                                        padding: '10px',
+                                        border: '1px solid #ddd',
+                                        borderRadius: '4px',
+                                        fontSize: '14px'
+                                    }}
+                                >
+                                    <option value="true">Add Validator</option>
+                                    <option value="false">Remove Validator</option>
+                                </select>
+                                <button
+                                    onClick={setValidator}
+                                    disabled={loading || !validatorAddress}
+                                    style={{
+                                        padding: '10px 20px',
+                                        backgroundColor: loading ? '#6c757d' : '#007bff',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: loading ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    {loading ? 'Processing...' : validatorStatus === "true" ? "Add Validator" : "Remove Validator"}
+                                </button>
+                            </div>
+
+                            <div style={{
+                                backgroundColor: '#fff',
+                                padding: '15px',
+                                borderRadius: '4px',
+                                border: '1px solid #e9ecef',
+                                marginTop: '20px'
+                            }}>
+                                <h4 style={{ marginTop: '0', color: '#333' }}>Validator Management:</h4>
+                                <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
+                                    <li><strong>Add Validator:</strong> Grant validation permissions to an address</li>
+                                    <li><strong>Remove Validator:</strong> Revoke validation permissions from an address</li>
+                                    <li>Validators can validate tickets at events</li>
+                                    <li>Only contract owner can manage validators</li>
+                                </ul>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Overview Tab */}
+                    {activeTab === 'overview' && (
+                        <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
+                            <h2 style={{ marginTop: '0', color: '#28a745' }}>📊 Ticket Overview</h2>
+
+                            <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#e9f7ef', borderRadius: '4px' }}>
+                                <p><strong>Total Tickets Created:</strong> {totalTickets}</p>
+                                <p><strong>Active Tickets:</strong> {allTickets.filter(t => !t.used && new Date(t.expiration) > new Date()).length}</p>
+                                <p><strong>Used Tickets:</strong> {allTickets.filter(t => t.used).length}</p>
+                                <p><strong>Expired Tickets:</strong> {allTickets.filter(t => !t.used && new Date(t.expiration) < new Date()).length}</p>
+                            </div>
+
+                            {loading ? (
+                                <div style={{ textAlign: 'center', padding: '20px' }}>
+                                    <p>Loading tickets...</p>
                                 </div>
-                            )}
-
-                            {/* Validators Tab */}
-                            {activeTab === 'validators' && (
-                                <div style={{ border: '1px solid #007bff', padding: '20px', borderRadius: '8px', backgroundColor: '#f8f9ff' }}>
-                                    <h2 style={{ marginTop: '0', color: '#007bff' }}>👥 Validators</h2>
-
-                                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                                        <input
-                                            type="text"
-                                            value={validatorAddress}
-                                            onChange={(e) => setValidatorAddress(e.target.value)}
-                                            placeholder="Enter Validator Address"
-                                            style={{
-                                                flex: '1',
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px'
-                                            }}
-                                        />
-                                        <select
-                                            value={validatorStatus}
-                                            onChange={(e) => setValidatorStatus(e.target.value)}
-                                            style={{
-                                                padding: '10px',
-                                                border: '1px solid #ddd',
-                                                borderRadius: '4px',
-                                                fontSize: '14px'
-                                            }}
-                                        >
-                                            <option value="true">Add Validator</option>
-                                            <option value="false">Remove Validator</option>
-                                        </select>
-                                        <button
-                                            onClick={setValidator}
-                                            disabled={loading || !validatorAddress}
-                                            style={{
-                                                padding: '10px 20px',
-                                                backgroundColor: loading ? '#6c757d' : '#007bff',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '4px',
-                                                cursor: loading ? 'not-allowed' : 'pointer'
-                                            }}
-                                        >
-                                            {loading ? 'Processing...' : validatorStatus === "true" ? "Add Validator" : "Remove Validator"}
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Overview Tab */}
-                            {activeTab === 'overview' && (
-                                <div style={{ border: '1px solid #28a745', padding: '20px', borderRadius: '8px', backgroundColor: '#f8fff9' }}>
-                                    <h2 style={{ marginTop: '0', color: '#28a745' }}>📊 Ticket Overview</h2>
-
-                                    {loading ? (
-                                        <p>Loading tickets...</p>
+                            ) : (
+                                <div>
+                                    {allTickets.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
+                                            <p>No tickets found. Create your first ticket using the Mint Ticket tab!</p>
+                                        </div>
                                     ) : (
                                         <div>
-                                            {allTickets.length === 0 ? (
-                                                <p>No tickets found.</p>
-                                            ) : (
-                                                allTickets.map(ticket => (
-                                                    <TicketCard key={ticket.id} ticket={ticket} />
-                                                ))
-                                            )}
+                                            <div style={{ marginBottom: '15px' }}>
+                                                <button
+                                                    onClick={() => loadContractData()}
+                                                    style={{
+                                                        backgroundColor: '#28a745',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        padding: '8px 15px',
+                                                        borderRadius: '4px',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    🔄 Refresh Tickets
+                                                </button>
+                                            </div>
+                                            {allTickets.map(ticket => (
+                                                <TicketCard
+                                                    key={ticket.id}
+                                                    ticket={ticket}
+                                                    onValidate={validateTicket}
+                                                    onRevoke={revokeTicket}
+                                                    isOwner={isOwner}
+                                                />
+                                            ))}
                                         </div>
                                     )}
                                 </div>
@@ -1089,9 +1182,8 @@ const AdminPanel = () => {
                 </div>
             )}
             <EventPopup />
-
         </div>
-    )
+    );
 }
 
 export default AdminPanel;
