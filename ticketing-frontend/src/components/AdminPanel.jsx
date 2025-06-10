@@ -22,9 +22,6 @@ const CONTRACT_ABI = [
     "function balanceOf(address owner) external view returns (uint256)",
     "function validators(address) external view returns (bool)",
     "function owner() external view returns (address)",
-    // Remove these two lines - they don't exist in your contract:
-    // "function totalSupply() external view returns (uint256)",
-    // "function exists(uint256 tokenId) external view returns (bool)",
     "event TicketMinted(uint256 indexed tokenId, address indexed attendee, string metadataURI)",
     "event TicketValidated(uint256 indexed tokenId, address indexed validator)",
     "event TicketTransferred(uint256 indexed tokenId, address from, address to, uint256 price)",
@@ -72,6 +69,11 @@ const AdminPanel = () => {
 
     // Validation ticket
     const [validateTicketId, setValidateTicketId] = useState('');
+
+    // Add new state variables for loading states
+    const [loadingPriceCap, setLoadingPriceCap] = useState(false);
+    const [loadingExpiration, setLoadingExpiration] = useState(false);
+    const [loadingRevoke, setLoadingRevoke] = useState(false);
 
     // Check if user is on local network
     const isLocalNetwork = async () => {
@@ -281,6 +283,10 @@ const AdminPanel = () => {
             const event = receipt.logs.find(log => log.eventName === 'TicketMinted');
             const tokenId = event ? event.args.tokenId.toString() : null;
 
+            if (!tokenId) {
+                throw new Error('Failed to get token ID from mint event');
+            }
+
             // Add ticket to database
             await axios.post('http://localhost:5000/api/tickets', {
                 tokenId,
@@ -301,14 +307,10 @@ const AdminPanel = () => {
             });
 
             alert('Ticket minted successfully!');
-
-            // Clear form first
             setAttendeeAddress('');
             setMetadataURI('');
             setPriceCap('');
             setExpirationDays('30');
-
-            // Then reload data
             await loadContractData();
 
         } catch (error) {
@@ -327,27 +329,29 @@ const AdminPanel = () => {
         }
 
         try {
-            const exists = await contract.exists(selectedTicketId);
-            if (!exists) {
-                alert('Ticket does not exist');
-                return;
+            // Check if ticket exists by trying to get its info
+            try {
+                const info = await contract.getTicketInfo(selectedTicketId);
+                const owner = await contract.ownerOf(selectedTicketId);
+
+                setTicketInfo({
+                    metadataURI: info[0],
+                    resalePriceCap: ethers.formatEther(info[1]),
+                    expiration: new Date(Number(info[2]) * 1000),
+                    used: info[3],
+                    owner: owner
+                });
+
+                // Set current values for editing
+                setNewPriceCap(ethers.formatEther(info[1]));
+                setNewExpirationDays(Math.ceil((Number(info[2]) * 1000 - Date.now()) / (24 * 60 * 60 * 1000)));
+            } catch (error) {
+                if (error.message.includes("ERC721: invalid token ID")) {
+                    alert('Ticket does not exist');
+                } else {
+                    throw error;
+                }
             }
-
-            const info = await contract.getTicketInfo(selectedTicketId);
-            const owner = await contract.ownerOf(selectedTicketId);
-
-            setTicketInfo({
-                metadataURI: info[0],
-                resalePriceCap: ethers.formatEther(info[1]),
-                expiration: new Date(Number(info[2]) * 1000),
-                used: info[3],
-                owner: owner
-            });
-
-            // Set current values for editing
-            setNewPriceCap(ethers.formatEther(info[1]));
-            setNewExpirationDays(Math.ceil((Number(info[2]) * 1000 - Date.now()) / (24 * 60 * 60 * 1000)));
-
         } catch (error) {
             console.error('Error getting ticket info:', error);
             alert('Error getting ticket info: ' + (error.reason || error.message));
@@ -362,12 +366,17 @@ const AdminPanel = () => {
         }
 
         try {
-            setLoading(true);
+            setLoadingPriceCap(true);
             const newCapWei = ethers.parseEther(newPriceCap);
 
             const tx = await contract.setResaleLimit(selectedTicketId, newCapWei);
             setTxHash(tx.hash);
-            await tx.wait();
+            const receipt = await tx.wait();
+
+            // Update ticket in database
+            await axios.patch(`http://localhost:5000/api/tickets/${selectedTicketId}`, {
+                priceCapETH: newPriceCap
+            });
 
             alert('Price cap updated successfully!');
             await getTicketInfo();
@@ -377,7 +386,7 @@ const AdminPanel = () => {
             console.error('Error updating price cap:', error);
             alert('Error updating price cap: ' + (error.reason || error.message));
         } finally {
-            setLoading(false);
+            setLoadingPriceCap(false);
         }
     };
 
@@ -389,12 +398,17 @@ const AdminPanel = () => {
         }
 
         try {
-            setLoading(true);
+            setLoadingExpiration(true);
             const newExpirationTimestamp = Math.floor(Date.now() / 1000) + (parseInt(newExpirationDays) * 24 * 60 * 60);
 
             const tx = await contract.setExpiration(selectedTicketId, newExpirationTimestamp);
             setTxHash(tx.hash);
-            await tx.wait();
+            const receipt = await tx.wait();
+
+            // Update ticket in database
+            await axios.patch(`http://localhost:5000/api/tickets/${selectedTicketId}`, {
+                expiration: new Date(newExpirationTimestamp * 1000)
+            });
 
             alert('Expiration updated successfully!');
             await getTicketInfo();
@@ -404,7 +418,7 @@ const AdminPanel = () => {
             console.error('Error updating expiration:', error);
             alert('Error updating expiration: ' + (error.reason || error.message));
         } finally {
-            setLoading(false);
+            setLoadingExpiration(false);
         }
     };
 
@@ -420,7 +434,7 @@ const AdminPanel = () => {
         }
 
         try {
-            setLoading(true);
+            setLoadingRevoke(true);
 
             const tx = await contract.revokeTicket(selectedTicketId);
             setTxHash(tx.hash);
@@ -445,7 +459,7 @@ const AdminPanel = () => {
             console.error('Error revoking ticket:', error);
             alert('Error revoking ticket: ' + (error.reason || error.message));
         } finally {
-            setLoading(false);
+            setLoadingRevoke(false);
         }
     };
 
@@ -459,15 +473,21 @@ const AdminPanel = () => {
         try {
             setLoading(true);
 
-            // Check if user exists in database
-            const userResponse = await axios.get(`http://localhost:5000/api/users/${validatorAddress}`);
-            if (!userResponse.data) {
-                throw new Error('User not found in database');
+            // First, ensure the user exists in the database
+            try {
+                await axios.post('http://localhost:5000/api/users', {
+                    wallet: validatorAddress
+                });
+            } catch (error) {
+                // If user already exists, that's fine
+                if (error.response?.status !== 200) {
+                    throw error;
+                }
             }
 
             const tx = await contract.setValidator(validatorAddress, validatorStatus);
             setTxHash(tx.hash);
-            await tx.wait();
+            const receipt = await tx.wait();
 
             // Update user's validator status in database
             await axios.patch(`http://localhost:5000/api/users/${validatorAddress}/validator`, {
@@ -502,10 +522,10 @@ const AdminPanel = () => {
                 throw new Error('You are not authorized to validate tickets');
             }
 
-            // Check if ticket exists
-            const exists = await contract.exists(validateTicketId);
-            if (!exists) {
-                throw new Error('Ticket does not exist');
+            // Check if ticket exists and is not already used
+            const info = await contract.getTicketInfo(validateTicketId);
+            if (info[3]) { // Check if ticket is already used
+                throw new Error('Ticket is already used');
             }
 
             const tx = await contract.validateTicket(validateTicketId);
@@ -517,6 +537,11 @@ const AdminPanel = () => {
                 tokenId: validateTicketId,
                 validator: account,
                 txHash: tx.hash
+            });
+
+            // Update ticket in database to mark it as used
+            await axios.patch(`http://localhost:5000/api/tickets/${validateTicketId}`, {
+                used: true
             });
 
             alert('Ticket validated successfully!');
@@ -956,17 +981,17 @@ const AdminPanel = () => {
                                                 />
                                                 <button
                                                     onClick={updatePriceCap}
-                                                    disabled={loading}
+                                                    disabled={loadingPriceCap}
                                                     style={{
                                                         padding: '10px 20px',
-                                                        backgroundColor: loading ? '#6c757d' : '#007bff',
+                                                        backgroundColor: loadingPriceCap ? '#6c757d' : '#007bff',
                                                         color: 'white',
                                                         border: 'none',
                                                         borderRadius: '4px',
-                                                        cursor: loading ? 'not-allowed' : 'pointer'
+                                                        cursor: loadingPriceCap ? 'not-allowed' : 'pointer'
                                                     }}
                                                 >
-                                                    {loading ? 'Updating...' : 'Update Price Cap'}
+                                                    {loadingPriceCap ? 'Updating...' : 'Update Price Cap'}
                                                 </button>
                                             </div>
                                         </div>
@@ -989,73 +1014,40 @@ const AdminPanel = () => {
                                                 />
                                                 <button
                                                     onClick={updateExpiration}
-                                                    disabled={loading}
+                                                    disabled={loadingExpiration}
                                                     style={{
                                                         padding: '10px 20px',
-                                                        backgroundColor: loading ? '#6c757d' : '#007bff',
+                                                        backgroundColor: loadingExpiration ? '#6c757d' : '#007bff',
                                                         color: 'white',
                                                         border: 'none',
                                                         borderRadius: '4px',
-                                                        cursor: loading ? 'not-allowed' : 'pointer'
+                                                        cursor: loadingExpiration ? 'not-allowed' : 'pointer'
                                                     }}
                                                 >
-                                                    {loading ? 'Updating...' : 'Update Expiration'}
+                                                    {loadingExpiration ? 'Updating...' : 'Update Expiration'}
                                                 </button>
                                             </div>
                                         </div>
                                         <div style={{ gridColumn: 'span 2' }}>
                                             <button
                                                 onClick={revokeTicket}
-                                                disabled={loading}
+                                                disabled={loadingRevoke}
                                                 style={{
                                                     width: '100%',
                                                     padding: '10px',
-                                                    backgroundColor: '#dc3545',
+                                                    backgroundColor: loadingRevoke ? '#6c757d' : '#dc3545',
                                                     color: 'white',
                                                     border: 'none',
                                                     borderRadius: '4px',
-                                                    cursor: loading ? 'not-allowed' : 'pointer'
+                                                    cursor: loadingRevoke ? 'not-allowed' : 'pointer'
                                                 }}
                                             >
-                                                {loading ? 'Revoking...' : 'Revoke Ticket'}
+                                                {loadingRevoke ? 'Revoking...' : 'Revoke Ticket'}
                                             </button>
                                         </div>
                                     </div>
                                 </div>
                             )}
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                                    Ticket ID to Revoke:
-                                </label>
-                                <input
-                                    type="number"
-                                    value={selectedTicketId}
-                                    onChange={(e) => setSelectedTicketId(e.target.value)}
-                                    placeholder="Enter Ticket ID"
-                                    style={{
-                                        width: '100%',
-                                        padding: '10px',
-                                        border: '1px solid #ddd',
-                                        borderRadius: '4px',
-                                        fontSize: '14px'
-                                    }}
-                                />
-                                <button
-                                    onClick={revokeTicket}
-                                    disabled={loading || !selectedTicketId}
-                                    style={{
-                                        marginTop: '10px',
-                                        padding: '10px 20px',
-                                        backgroundColor: '#dc3545',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '4px',
-                                        cursor: loading ? 'not-allowed' : 'pointer'
-                                    }}
-                                >
-                                    {loading ? 'Revoking...' : 'Revoke Ticket'}
-                                </button>
-                            </div>
                         </div>
                     )}
 

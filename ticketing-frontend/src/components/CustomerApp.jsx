@@ -158,7 +158,7 @@ events.forEach(name => {
   });
 });
       // Load tickets
-      await loadTickets(contract, accounts[0]);
+      await loadTickets();
 
     } catch (error) {
       console.error('Error connecting wallet:', error);
@@ -167,120 +167,120 @@ events.forEach(name => {
   };
 
   // Load all tickets and categorize them
-  const loadTickets = async (contractInstance = contract, userAccount = account) => {
-    if (!contractInstance) return;
+  const loadTickets = async () => {
+    if (!contract || !account) return;
 
     try {
-      setLoading(true);
-      
-      // Fetch tickets from blockchain
-      const totalSupply = await contractInstance.totalSupply();
-      const blockchainTickets = [];
-      const userTickets = [];
-      /*
-      for (let i = 1; i <= Number(totalSupply); i++) {
-        try {
-          const exists = await contractInstance.exists(i);
-          if (!exists) continue;
+        setLoading(true);
+        const blockchainTickets = [];
+        const existingIds = new Set();
 
-          const info = await contractInstance.getTicketInfo(i);
-          const owner = await contractInstance.ownerOf(i);
-          
-          const ticketData = {
-            id: i,
-            metadataURI: info[0],
-            resalePriceCap: ethers.formatEther(info[1]),
-            expiration: new Date(Number(info[2]) * 1000),
-            used: info[3],
-            owner: owner,
-            isExpired: new Date() > new Date(Number(info[2]) * 1000),
-            source: 'blockchain'
-          };
+        // Get tickets from blockchain
+        let tokenId = 1;
+        while (true) {
+            try {
+                const info = await contract.getTicketInfo(tokenId);
+                const owner = await contract.ownerOf(tokenId);
+                const isExpired = new Date() > new Date(Number(info[2]) * 1000);
 
-          if (owner.toLowerCase() === userAccount.toLowerCase()) {
-            userTickets.push(ticketData);
-          } else if (!ticketData.used && !ticketData.isExpired) {
-            blockchainTickets.push(ticketData);
-          }
-        } catch (error) {
-          console.error(`Error loading ticket ${i}:`, error);
+                // Only add tickets that are not owned by the current user and are valid
+                if (owner.toLowerCase() !== account.toLowerCase() && !isExpired && !info[3]) {
+                    blockchainTickets.push({
+                        id: tokenId,
+                        metadataURI: info[0],
+                        resalePriceCap: ethers.formatEther(info[1]),
+                        expiration: new Date(Number(info[2]) * 1000),
+                        used: info[3],
+                        owner: owner,
+                        isExpired: isExpired,
+                        source: 'blockchain'
+                    });
+                    existingIds.add(tokenId);
+                }
+                tokenId++;
+            } catch (error) {
+                break;
+            }
         }
-      }*/
 
-      // Fetch tickets from backend API
-      try {
-        const response = await fetch('http://localhost:5000/api/tickets');
-        const dbTickets = await response.json();
-        
-        // Convert database tickets to the same format
-        const formattedDbTickets = dbTickets.map(ticket => ({
-          id: ticket.tokenId,
-          metadataURI: ticket.metadataURI,
-          resalePriceCap: ticket.priceCap,
-          expiration: new Date(ticket.expiration),
-          used: false,
-          owner: ticket.attendee,
-          isExpired: new Date() > new Date(ticket.expiration),
-          source: 'database'
-        }));
+        // Get tickets from database
+        try {
+            const response = await axios.get('http://localhost:5000/api/tickets');
+            const dbTickets = response.data
+                .filter(ticket => 
+                    !existingIds.has(ticket.tokenId) && 
+                    ticket.attendee.toLowerCase() !== account.toLowerCase() &&
+                    new Date() <= new Date(ticket.expiration) &&
+                    !ticket.used
+                )
+                .map(ticket => ({
+                    id: ticket.tokenId,
+                    metadataURI: ticket.metadataURI,
+                    resalePriceCap: ticket.priceCap,
+                    expiration: new Date(ticket.expiration),
+                    used: ticket.used || false,
+                    owner: ticket.attendee,
+                    isExpired: new Date() > new Date(ticket.expiration),
+                    source: 'database'
+                }));
 
-        // Add database tickets to available tickets if they're not owned by the user
-        const availableDbTickets = formattedDbTickets.filter(ticket => 
-          ticket.owner.toLowerCase() !== userAccount.toLowerCase() && 
-          !ticket.isExpired
-        );
-
-        // Add database tickets to user tickets if they're owned by the user
-        const userDbTickets = formattedDbTickets.filter(ticket => 
-          ticket.owner.toLowerCase() === userAccount.toLowerCase()
-        );
-
-        setAvailableTickets([...blockchainTickets, ...availableDbTickets]);
-        setMyTickets([...userTickets, ...userDbTickets]);
-      } catch (error) {
-        console.error('Error loading tickets from database:', error);
-        // If database fetch fails, still show blockchain tickets
-        setAvailableTickets(blockchainTickets);
-        setMyTickets(userTickets);
-      }
+            setAvailableTickets([...blockchainTickets, ...dbTickets]);
+        } catch (error) {
+            console.error('Error loading tickets from database:', error);
+            setAvailableTickets(blockchainTickets);
+        }
     } catch (error) {
-      console.error('Error loading tickets:', error);
+        console.error('Error loading tickets:', error);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
+  // Add useEffect to load tickets when contract and account are available
+  useEffect(() => {
+    if (contract && account) {
+        loadTickets();
+    }
+  }, [contract, account]);
+
   // Purchase ticket (transfer from current owner)
-  const purchaseTicket = async (ticketId, price) => {
+  const purchaseTicket = async (ticket) => {
     if (!contract || !account) {
-      alert('Please connect your wallet first');
-      return;
+        alert('Please connect your wallet first');
+        return;
     }
 
     try {
-      setLoading(true);
+        setLoading(true);
+        const priceWei = ethers.parseEther(ticket.resalePriceCap);
 
-      const tx = await contract.transferTicket(account, ticketId, ethers.parseEther(price));
-      const receipt = await tx.wait();
+        const tx = await contract.transferTicket(
+            account,
+            ticket.id,
+            priceWei
+        );
 
-      // Add transaction to database
-      await axios.post('http://localhost:5000/api/transactions', {
-        tokenId: ticketId,
-        from: account,
-        to: account,
-        priceETH: price,
-        txHash: tx.hash,
-        type: 'transfer'
-      });
+        setTxHash(tx.hash);
+        const receipt = await tx.wait();
 
-      alert('Ticket purchased successfully!');
-      await loadTickets();
+        // Add transaction to database
+        await axios.post('http://localhost:5000/api/transactions', {
+            tokenId: ticket.id,
+            from: ticket.owner,
+            to: account,
+            priceETH: ticket.resalePriceCap,
+            txHash: tx.hash,
+            type: 'transfer'
+        });
+
+        alert('Ticket purchased successfully!');
+        await loadTickets();
 
     } catch (error) {
-      console.error('Error purchasing ticket:', error);
-      alert('Error purchasing ticket: ' + (error.reason || error.message));
+        console.error('Error purchasing ticket:', error);
+        alert('Error purchasing ticket: ' + (error.reason || error.message));
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
@@ -331,7 +331,7 @@ events.forEach(name => {
         } else {
           setAccount(accounts[0]);
           if (contract) {
-            loadTickets(contract, accounts[0]);
+            loadTickets();
           }
         }
       });
@@ -406,7 +406,7 @@ events.forEach(name => {
             onClick={() => setSelectedTicket(ticket)}
             style={{
               padding: '8px 16px',
-              backgroundColor: '#007bff',
+              backgroundColor: ticket.source === 'blockchain' ? '#007bff' : '#ff9800',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -414,7 +414,7 @@ events.forEach(name => {
               fontSize: '14px'
             }}
           >
-            Buy Now
+            {ticket.source === 'blockchain' ? 'Buy NFT' : 'Purchase'}
           </button>
         )}
       </div>
@@ -715,7 +715,7 @@ events.forEach(name => {
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
-                onClick={() => purchaseTicket(selectedTicket.id, purchasePrice)}
+                onClick={() => purchaseTicket(selectedTicket)}
                 disabled={loading || !purchasePrice}
                 style={{
                   flex: 1,
