@@ -527,6 +527,20 @@
     },
     {
       "type": "function",
+      "name": "purchaseTicket",
+      "constant": false,
+      "stateMutability": "payable",
+      "payable": true,
+      "inputs": [
+        {
+          "type": "uint256",
+          "name": "tokenId"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "type": "function",
       "name": "renounceOwnership",
       "constant": false,
       "payable": false,

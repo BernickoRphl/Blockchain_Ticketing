@@ -8,6 +8,7 @@ const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const CONTRACT_ABI = [
   "function mintTicket(address attendee, string calldata metadataURI, uint256 priceCap, uint256 expirationTimestamp) external returns (uint256)",
   "function validateTicket(uint256 tokenId) external",
+  "function purchaseTicket(uint256 tokenId) external payable",
   "function transferTicket(address to, uint256 tokenId, uint256 price) external",
   "function setValidator(address validator, bool status) external",
   "function setResaleLimit(uint256 tokenId, uint256 newCap) external",
@@ -32,25 +33,25 @@ const CustomerApp = () => {
   const [contract, setContract] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [networkName, setNetworkName] = useState('');
-  
+
   // Ticket states
   // const [userTickets, setUserTickets] = useState([]);
   const [availableTickets, setAvailableTickets] = useState([]);
   const [myTickets, setMyTickets] = useState([]);
   const [loading, setLoading] = useState(false);
   const [txHash, setTxHash] = useState('');
-  
+
   // Transfer states
   const [transferTicketId, setTransferTicketId] = useState('');
   const [transferTo, setTransferTo] = useState('');
   const [transferPrice, setTransferPrice] = useState('');
-  
+
   // Purchase states
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [purchasePrice, setPurchasePrice] = useState('');
-  
+
   const [showEventPopup, setShowEventPopup] = useState(false);
-const [eventLogs, setEventLogs] = useState([]);
+  const [eventLogs, setEventLogs] = useState([]);
 
   // Check if user is on local network
   const isLocalNetwork = async () => {
@@ -141,14 +142,14 @@ const [eventLogs, setEventLogs] = useState([]);
       setIsConnected(true);
       setNetworkName(networkName);
 
-      const events = ['TicketMinted','TicketValidated','TicketTransferred'];
-events.forEach(name => {
-  contract.on(name, (...args) => {
-    const e = args[args.length - 1];
-    setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
-    setShowEventPopup(true);
-  });
-});
+      const events = ['TicketMinted', 'TicketValidated', 'TicketTransferred'];
+      events.forEach(name => {
+        contract.on(name, (...args) => {
+          const e = args[args.length - 1];
+          setEventLogs(prev => ([{ name, args: e.args, timestamp: Date.now() }, ...prev]));
+          setShowEventPopup(true);
+        });
+      });
       // Load tickets
       await loadTickets(contract, accounts[0]);
 
@@ -175,7 +176,7 @@ events.forEach(name => {
 
           const info = await contractInstance.getTicketInfo(i);
           const owner = await contractInstance.ownerOf(i);
-          
+
           const ticketData = {
             id: i,
             metadataURI: info[0],
@@ -217,18 +218,18 @@ events.forEach(name => {
       setTxHash('');
 
       const priceWei = ethers.parseEther(price);
-      
+
       // Get ticket info to check price cap
       const info = await contract.getTicketInfo(ticketId);
       const priceCap = info[1];
-      
+
       if (priceWei > priceCap) {
         alert(`Price exceeds the maximum allowed price of ${ethers.formatEther(priceCap)} ETH`);
         return;
       }
 
-      const tx = await contract.transferTicket(account, ticketId, priceWei, {
-        value: priceWei // Send ETH with the transaction
+      const tx = await contract.purchaseTicket(ticketId, {
+        value: priceWei
       });
 
       setTxHash(tx.hash);
@@ -240,8 +241,7 @@ events.forEach(name => {
       alert('Ticket purchased successfully!');
       setSelectedTicket(null);
       setPurchasePrice('');
-      
-      // Reload tickets
+
       await loadTickets();
 
     } catch (error) {
@@ -264,20 +264,20 @@ events.forEach(name => {
       setTxHash('');
 
       const priceWei = ethers.parseEther(transferPrice);
-      
+
       const tx = await contract.transferTicket(transferTo, transferTicketId, priceWei);
       setTxHash(tx.hash);
-      
+
       const receipt = await tx.wait();
       console.log('Transfer confirmed:', receipt);
 
       alert('Ticket transferred successfully!');
-      
+
       // Clear form
       setTransferTicketId('');
       setTransferTo('');
       setTransferPrice('');
-      
+
       // Reload tickets
       await loadTickets();
 
@@ -314,9 +314,9 @@ events.forEach(name => {
         window.ethereum.removeAllListeners('accountsChanged');
         window.ethereum.removeAllListeners('chainChanged');
       }
-       if (!contract) return;
-  const evts = ['TicketMinted','TicketValidated','TicketTransferred'];
-  return () => evts.forEach(name => contract.off(name));
+      if (!contract) return;
+      const evts = ['TicketMinted', 'TicketValidated', 'TicketTransferred'];
+      return () => evts.forEach(name => contract.off(name));
     };
   }, [contract]);
 
@@ -358,7 +358,7 @@ events.forEach(name => {
             </p>
           )}
         </div>
-        
+
         {!isOwned && !ticket.used && !ticket.isExpired && (
           <button
             onClick={() => setSelectedTicket(ticket)}
@@ -379,36 +379,36 @@ events.forEach(name => {
     </div>
   );
   const EventPopup = () => showEventPopup && (
-  <div style={{
-    position:'fixed', top:0, left:0, width:'100%', height:'100%',
-    backgroundColor:'rgba(0,0,0,0.5)', display:'flex',
-    justifyContent:'center', alignItems:'center', zIndex:1000
-  }}>
     <div style={{
-      position:'relative', background:'#fff', padding:'20px',
-      borderRadius:'8px', maxWidth:'500px', width:'90%',
-      maxHeight:'80%', overflowY:'auto'
+      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+      backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+      justifyContent: 'center', alignItems: 'center', zIndex: 1000
     }}>
-      <button onClick={() => setShowEventPopup(false)}
-        style={{
-          position:'absolute', top:'10px', right:'10px',
-          fontSize:'18px', border:'none', background:'none', cursor:'pointer'
-        }}>×</button>
-      <h3>📋 Event Logs</h3>
-      <ul style={{ listStyle:'none', padding:0 }}>
-        {eventLogs.map((e,i) => (
-          <li key={i} style={{ margin:'10px 0', borderBottom:'1px solid #eee', paddingBottom:'5px' }}>
-            <strong>{e.name}</strong>
-            {Object.entries(e.args).filter(([k])=>k!=='_event').map(([k,v]) =>
-              <div key={k}><em>{k}:</em> {v.toString()}</div>
-            )}
-            <small style={{ color:'#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
-          </li>
-        ))}
-      </ul>
+      <div style={{
+        position: 'relative', background: '#fff', padding: '20px',
+        borderRadius: '8px', maxWidth: '500px', width: '90%',
+        maxHeight: '80%', overflowY: 'auto'
+      }}>
+        <button onClick={() => setShowEventPopup(false)}
+          style={{
+            position: 'absolute', top: '10px', right: '10px',
+            fontSize: '18px', border: 'none', background: 'none', cursor: 'pointer'
+          }}>×</button>
+        <h3>📋 Event Logs</h3>
+        <ul style={{ listStyle: 'none', padding: 0 }}>
+          {eventLogs.map((e, i) => (
+            <li key={i} style={{ margin: '10px 0', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
+              <strong>{e.name}</strong>
+              {Object.entries(e.args).filter(([k]) => k !== '_event').map(([k, v]) =>
+                <div key={k}><em>{k}:</em> {v.toString()}</div>
+              )}
+              <small style={{ color: '#666' }}>{new Date(e.timestamp).toLocaleTimeString()}</small>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
-  </div>
-);
+  );
 
 
   return (
@@ -418,15 +418,15 @@ events.forEach(name => {
           🎫 EventChain Marketplace
         </h1>
         <div>
-  <button onClick={() => setShowEventPopup(true)}
-    style={{
-      marginRight:'10px', padding:'8px 12px',
-      backgroundColor:'#17a2b8', color:'#fff',
-      border:'none', borderRadius:'4px', cursor:'pointer'
-    }}>
-    Show Events
-  </button>
-  <a href="/admin"style={{
+          <button onClick={() => setShowEventPopup(true)}
+            style={{
+              marginRight: '10px', padding: '8px 12px',
+              backgroundColor: '#17a2b8', color: '#fff',
+              border: 'none', borderRadius: '4px', cursor: 'pointer'
+            }}>
+            Show Events
+          </button>
+          <a href="/admin" style={{
             padding: '10px 20px',
             backgroundColor: '#6c757d',
             color: 'white',
@@ -434,7 +434,7 @@ events.forEach(name => {
             borderRadius: '4px',
             fontSize: '14px'
           }}>Admin Panel</a>
-</div>
+        </div>
 
       </div>
 
@@ -444,7 +444,7 @@ events.forEach(name => {
           <p style={{ marginBottom: '15px', color: '#666' }}>
             Connect your wallet to view and purchase tickets
           </p>
-          <button 
+          <button
             onClick={connectWallet}
             style={{
               padding: '12px 24px',
@@ -472,20 +472,20 @@ events.forEach(name => {
 
       {isConnected && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-          
+
           {/* Available Tickets */}
           <div>
             <h2 style={{ color: '#007bff', marginBottom: '20px' }}>🛒 Available Tickets</h2>
-            
+
             {loading ? (
               <div style={{ textAlign: 'center', padding: '20px' }}>
                 <p>Loading tickets...</p>
               </div>
             ) : availableTickets.length === 0 ? (
-              <div style={{ 
-                textAlign: 'center', 
-                padding: '40px', 
-                backgroundColor: '#f8f9fa', 
+              <div style={{
+                textAlign: 'center',
+                padding: '40px',
+                backgroundColor: '#f8f9fa',
                 borderRadius: '8px',
                 color: '#666'
               }}>
@@ -503,12 +503,12 @@ events.forEach(name => {
           {/* My Tickets */}
           <div>
             <h2 style={{ color: '#28a745', marginBottom: '20px' }}>🎟️ My Tickets</h2>
-            
+
             {myTickets.length === 0 ? (
-              <div style={{ 
-                textAlign: 'center', 
-                padding: '40px', 
-                backgroundColor: '#f8f9fa', 
+              <div style={{
+                textAlign: 'center',
+                padding: '40px',
+                backgroundColor: '#f8f9fa',
                 borderRadius: '8px',
                 color: '#666',
                 marginBottom: '30px'
@@ -525,14 +525,14 @@ events.forEach(name => {
 
             {/* Transfer Ticket Section */}
             {myTickets.length > 0 && (
-              <div style={{ 
-                border: '1px solid #ffc107', 
-                padding: '20px', 
-                borderRadius: '8px', 
-                backgroundColor: '#fffdf0' 
+              <div style={{
+                border: '1px solid #ffc107',
+                padding: '20px',
+                borderRadius: '8px',
+                backgroundColor: '#fffdf0'
               }}>
                 <h3 style={{ marginTop: '0', color: '#856404' }}>↗️ Transfer Ticket</h3>
-                
+
                 <div style={{ display: 'grid', gap: '15px' }}>
                   <div>
                     <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
@@ -597,8 +597,8 @@ events.forEach(name => {
                     />
                   </div>
 
-                  <button 
-                    onClick={transferTicket} 
+                  <button
+                    onClick={transferTicket}
                     disabled={loading}
                     style={{
                       padding: '12px',
@@ -644,7 +644,7 @@ events.forEach(name => {
             <h3 style={{ marginTop: 0, color: '#333' }}>
               Purchase Ticket #{selectedTicket.id}
             </h3>
-            
+
             <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
               <p style={{ margin: '5px 0' }}><strong>Metadata:</strong> {selectedTicket.metadataURI}</p>
               <p style={{ margin: '5px 0' }}><strong>Maximum Price:</strong> {selectedTicket.resalePriceCap} ETH</p>
@@ -688,7 +688,7 @@ events.forEach(name => {
               >
                 {loading ? 'Processing...' : 'Confirm Purchase'}
               </button>
-              
+
               <button
                 onClick={() => {
                   setSelectedTicket(null);
@@ -714,19 +714,19 @@ events.forEach(name => {
 
       {/* Transaction Hash Display */}
       {txHash && (
-        <div style={{ 
+        <div style={{
           position: 'fixed',
           bottom: '20px',
           right: '20px',
-          padding: '15px', 
-          backgroundColor: '#d4edda', 
+          padding: '15px',
+          backgroundColor: '#d4edda',
           borderRadius: '4px',
           border: '1px solid #c3e6cb',
           color: '#155724',
           maxWidth: '400px',
           zIndex: 1001
         }}>
-          <strong>Transaction Hash:</strong><br/>
+          <strong>Transaction Hash:</strong><br />
           <a href={`https://etherscan.io/tx/${txHash}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px' }}>
             {txHash.slice(0, 20)}...
           </a>
