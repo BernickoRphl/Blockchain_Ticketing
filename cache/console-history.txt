@@ -1,0 +1,16 @@
+const contractAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+console.log("Owner:", owner);
+nst contract = await EventChainTicket.attach(contrconst owner = await contract.owner();
+const EventChainTicket = awaitco
+const contractAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+# Masuk console lagi
+.exit
+console.log("Owner:", owner);# Exit console dulu
+const owner = await contract.owner();
+const contract = await EventChainTicket.attach(contractAddress);
+const EventChainTicket = await
+console.log("Owner:", owner);const contractAddress = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const contract = await EventChainTicket.const owner = await contract.owner();
+const EventChainTicket = await ethers.getContractFactory("EventChainTicket");
+const c ganti dengan address yang baru
+// Test dengan address terbaru dari deploy

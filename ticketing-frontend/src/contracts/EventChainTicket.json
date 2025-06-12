@@ -1,0 +1,17 @@
+
+{
+  "abi": [
+    {
+      "inputs": [
+        {"internalType": "address", "name": "attendee", "type": "address"},
+        {"internalType": "string", "name": "metadataURI", "type": "string"},
+        {"internalType": "uint256", "name": "priceCap", "type": "uint256"},
+        {"internalType": "uint256", "name": "expiration", "type": "uint256"}
+      ],
+      "name": "mintTicket",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}
