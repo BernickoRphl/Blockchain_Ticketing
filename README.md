@@ -1,13 +1,3 @@
-# Sample Hardhat Project
+# Scrapped MongoDB Implementation
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
-
-Try running some of the following tasks:
-
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.js
-```
+This branch is actually supposed to integrate MongoDB into the database, however due to testing errors on tester's end, it was scrapped last minute.
